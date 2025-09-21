@@ -15,7 +15,7 @@ class MyAppsPage extends StatelessWidget {
             child: TextField(
               decoration: InputDecoration(
                 hintText: "Hinted search text",
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30),
                 ),
@@ -27,15 +27,20 @@ class MyAppsPage extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              FilterChip(label: Text("All"), onSelected: (_) {}, selected: true),
-              SizedBox(width: 8),
-              FilterChip(label: Text("Alerts On"), onSelected: (_) {}, selected: false),
-              SizedBox(width: 8),
-              FilterChip(label: Text("Alerts Off"), onSelected: (_) {}, selected: false),
+              FilterChip(label: const Text("All"), onSelected: (_) {}, selected: true),
+              const SizedBox(width: 8),
+              FilterChip(label: const Text("Alerts On"), onSelected: (_) {}, selected: false),
+              const SizedBox(width: 8),
+              FilterChip(label: const Text("Alerts Off"), onSelected: (_) {}, selected: false),
             ],
           ),
-          const SizedBox(height: 32),
-          const Center(child: Text("There is no app\nyou have to scan first", textAlign: TextAlign.center)),
+          const SizedBox(height: 40),
+          const Center(
+            child: Text(
+              "There is no app\nyou have to scan first",
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );

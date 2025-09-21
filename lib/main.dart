@@ -15,6 +15,14 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        scaffoldBackgroundColor: Colors.white,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+        ),
+      ),
       home: const HomePage(),
     );
   }
@@ -29,6 +37,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 1; // default หน้า Scan
+
   final List<Widget> _pages = const [
     NotificationsPage(),
     ScanPage(),
@@ -50,6 +59,9 @@ class _HomePageState extends State<HomePage> {
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white, // พื้นหลังขาว
+        selectedItemColor: Colors.blue, // สีฟ้าเข้มตอนเลือก
+        unselectedItemColor: Colors.black54, // สีเทาอ่อนตอนยังไม่เลือก
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.notifications),
