@@ -9,13 +9,17 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
-class _ScanPageState extends State<ScanPage> {
+class _ScanPageState extends State<ScanPage>
+    with AutomaticKeepAliveClientMixin {
   bool isScanning = false;
   bool scanCompleted = false;
   double progress = 0.0;
   int checkedApps = 0;
-  final int totalApps = 58; // สมมุติว่ามี 58 app ไว้โชว์ progress
+  final int totalApps = 58; // สมมุติว่า progress bar จะเช็ค 58 apps
   List<Application> installedApps = [];
+
+  @override
+  bool get wantKeepAlive => true; // <<< สำคัญ ทำให้ state ค้างอยู่
 
   void startScan() {
     setState(() {
@@ -23,7 +27,7 @@ class _ScanPageState extends State<ScanPage> {
       scanCompleted = false;
       progress = 0.0;
       checkedApps = 0;
-      installedApps = [];
+      // ❌ ไม่ล้าง installedApps เพราะอยากให้ค้างอยู่
     });
 
     Timer.periodic(const Duration(milliseconds: 120), (timer) {
@@ -50,21 +54,24 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> getInstalledApps() async {
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
-      includeSystemApps: false,       // ไม่เอาแอประบบ
-      onlyAppsWithLaunchIntent: true, // เอาเฉพาะแอปที่ user ติดตั้ง/เปิดได้
+      includeSystemApps: false, // ไม่เอา system apps
+      onlyAppsWithLaunchIntent: true, // เอาเฉพาะที่เปิดได้
     );
 
-    // เรียงตามชื่อ
     apps.sort((a, b) => a.appName.compareTo(b.appName));
 
     setState(() {
       installedApps = apps;
     });
-  }
 
+    // ✨ ถ้าจะเชื่อม backend ทีหลัง ทำตรงนี้
+    // await sendInstalledAppsToServer(apps);
+  }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // <<< สำคัญ ต้องเรียก super.build
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
@@ -90,7 +97,7 @@ class _ScanPageState extends State<ScanPage> {
           ),
           const SizedBox(height: 30),
 
-          // ส่วนวงกลมตรงกลาง
+          // วงกลมตรงกลาง
           Center(
             child: isScanning
                 ? SizedBox(
@@ -228,10 +235,8 @@ class _ScanPageState extends State<ScanPage> {
                   ),
                 ),
 
-                // ถ้ายังไม่ scan → ข้อความ
-                // ถ้า scan เสร็จ → list แอพจริง
                 Expanded(
-                  child: scanCompleted
+                  child: installedApps.isNotEmpty
                       ? ListView.builder(
                     itemCount: installedApps.length,
                     itemBuilder: (context, index) {
