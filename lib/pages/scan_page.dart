@@ -50,14 +50,18 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> getInstalledApps() async {
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
+      includeSystemApps: false,       // ไม่เอาแอประบบ
+      onlyAppsWithLaunchIntent: true, // เอาเฉพาะแอปที่ user ติดตั้ง/เปิดได้
     );
 
+    // เรียงตามชื่อ
     apps.sort((a, b) => a.appName.compareTo(b.appName));
 
     setState(() {
       installedApps = apps;
     });
   }
+
 
   @override
   Widget build(BuildContext context) {
