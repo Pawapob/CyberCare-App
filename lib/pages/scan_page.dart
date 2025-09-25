@@ -13,26 +13,40 @@ class _ScanPageState extends State<ScanPage>
     with AutomaticKeepAliveClientMixin {
   bool isScanning = false;
   bool scanCompleted = false;
+  bool hasScannedOnce = false; // <<< flag ว่าเคยสแกนแล้ว
   double progress = 0.0;
   int checkedApps = 0;
-  final int totalApps = 58; // สมมุติว่า progress bar จะเช็ค 58 apps
+  int totalApps = 0;
   List<Application> installedApps = [];
 
   @override
-  bool get wantKeepAlive => true; // <<< สำคัญ ทำให้ state ค้างอยู่
+  bool get wantKeepAlive => true; // <<< ทำให้ state ไม่ reset เวลาเปลี่ยนแท็บ
 
-  void startScan() {
+  void startScan() async {
+    // ดึงแอปมาดูก่อนว่ามีกี่ตัว
+    List<Application> apps = await DeviceApps.getInstalledApplications(
+      includeAppIcons: true,
+      includeSystemApps: false,
+      onlyAppsWithLaunchIntent: true,
+    );
+
+    // กรองไม่ให้เจอแอปตัวเอง
+    apps = apps
+        .where((app) => app.packageName != "com.example.cybercare_app")
+        .toList();
+
     setState(() {
+      totalApps = apps.length;
       isScanning = true;
       scanCompleted = false;
       progress = 0.0;
       checkedApps = 0;
-      // ❌ ไม่ล้าง installedApps เพราะอยากให้ค้างอยู่
+      // ❌ ห้ามล้าง installedApps = [];
     });
 
     Timer.periodic(const Duration(milliseconds: 120), (timer) {
       setState(() {
-        progress += 0.02;
+        progress += 1 / (totalApps == 0 ? 1 : totalApps);
         checkedApps = (progress * totalApps).clamp(0, totalApps).toInt();
 
         if (progress >= 1.0) {
@@ -44,6 +58,7 @@ class _ScanPageState extends State<ScanPage>
             setState(() {
               isScanning = false;
               scanCompleted = true;
+              hasScannedOnce = true; // <<< mark ว่าเคยสแกนแล้ว
             });
           });
         }
@@ -54,23 +69,32 @@ class _ScanPageState extends State<ScanPage>
   Future<void> getInstalledApps() async {
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
-      includeSystemApps: false, // ไม่เอา system apps
-      onlyAppsWithLaunchIntent: true, // เอาเฉพาะที่เปิดได้
+      includeSystemApps: false,
+      onlyAppsWithLaunchIntent: true,
     );
 
-    apps.sort((a, b) => a.appName.compareTo(b.appName));
+    // กรองไม่ให้เจอแอปตัวเอง
+    apps = apps
+        .where((app) => app.packageName != "com.example.cybercare_app")
+        .toList();
+
+    // เรียงจากใหม่ไปเก่า
+    apps.sort((a, b) => b.installTimeMillis.compareTo(a.installTimeMillis));
 
     setState(() {
       installedApps = apps;
     });
+  }
 
-    // ✨ ถ้าจะเชื่อม backend ทีหลัง ทำตรงนี้
-    // await sendInstalledAppsToServer(apps);
+  String _installedText(int daysAgo) {
+    if (daysAgo == 0) return "Installed today";
+    if (daysAgo == 1) return "Installed yesterday";
+    return "Installed $daysAgo days ago";
   }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // <<< สำคัญ ต้องเรียก super.build
+    super.build(context); // <<< ต้องมี เพื่อให้ keepAlive ทำงาน
 
     return Scaffold(
       appBar: AppBar(
@@ -225,7 +249,17 @@ class _ScanPageState extends State<ScanPage>
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       TextButton(
-                        onPressed: () {},
+                        onPressed: () {
+                          if (installedApps.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    AllAppsPage(apps: installedApps),
+                              ),
+                            );
+                          }
+                        },
                         child: const Text(
                           "View all",
                           style: TextStyle(color: Colors.blue),
@@ -236,18 +270,26 @@ class _ScanPageState extends State<ScanPage>
                 ),
 
                 Expanded(
-                  child: installedApps.isNotEmpty
+                  child: hasScannedOnce
                       ? ListView.builder(
-                    itemCount: installedApps.length,
+                    itemCount: installedApps.length < 3
+                        ? installedApps.length
+                        : 3,
                     itemBuilder: (context, index) {
                       final app = installedApps[index];
+                      final installedDate =
+                      DateTime.fromMillisecondsSinceEpoch(
+                          app.installTimeMillis);
+                      final daysAgo =
+                          DateTime.now().difference(installedDate).inDays;
+
                       return ListTile(
                         leading: app is ApplicationWithIcon
                             ? Image.memory(app.icon,
                             width: 40, height: 40)
                             : const Icon(Icons.android),
                         title: Text(app.appName),
-                        subtitle: Text("Package: ${app.packageName}"),
+                        subtitle: Text(_installedText(daysAgo)),
                       );
                     },
                   )
@@ -263,6 +305,46 @@ class _ScanPageState extends State<ScanPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ------------------ หน้า View All ------------------
+class AllAppsPage extends StatelessWidget {
+  final List<Application> apps;
+
+  const AllAppsPage({super.key, required this.apps});
+
+  String _installedText(int daysAgo) {
+    if (daysAgo == 0) return "Installed today";
+    if (daysAgo == 1) return "Installed yesterday";
+    return "Installed $daysAgo days ago";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("All Installed Apps"),
+        centerTitle: true,
+      ),
+      body: ListView.builder(
+        itemCount: apps.length,
+        itemBuilder: (context, index) {
+          final app = apps[index];
+          final installedDate =
+          DateTime.fromMillisecondsSinceEpoch(app.installTimeMillis);
+          final daysAgo = DateTime.now().difference(installedDate).inDays;
+
+          return ListTile(
+            leading: app is ApplicationWithIcon
+                ? Image.memory(app.icon, width: 40, height: 40)
+                : const Icon(Icons.android),
+            title: Text(app.appName),
+            subtitle: Text(_installedText(daysAgo)),
+          );
+        },
       ),
     );
   }
