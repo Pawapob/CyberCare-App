@@ -40,7 +40,7 @@ class _HomePageState extends State<HomePage> {
 
   final List<Widget> _pages = const [
     NotificationsPage(),
-    ScanPage(),
+    ScanPage(key: PageStorageKey('scan')), // ใส่ key ไว้
     MyAppsPage(),
     SettingsPage(),
   ];
@@ -54,14 +54,17 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white, // พื้นหลังขาว
-        selectedItemColor: Colors.blue, // สีฟ้าเข้มตอนเลือก
-        unselectedItemColor: Colors.black54, // สีเทาอ่อนตอนยังไม่เลือก
+        backgroundColor: Colors.white,
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.black54,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.notifications),
