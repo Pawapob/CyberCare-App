@@ -36,7 +36,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 1; // default เปิดหน้า Scan
+  int _selectedIndex = 1; // default หน้า Scan
 
   void _onItemTapped(int index) {
     setState(() {
@@ -51,7 +51,7 @@ class _HomePageState extends State<HomePage> {
         index: _selectedIndex,
         children: [
           const NotificationsPage(),
-          ScanPage(isActive: _selectedIndex == 1), // ✅ ส่งค่า active เข้าไป
+          ScanPage(isActive: _selectedIndex == 1), // ✅ ส่งค่า isActive เข้าไป
           const MyAppsPage(),
           const SettingsPage(),
         ],

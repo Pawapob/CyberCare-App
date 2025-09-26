@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:device_apps/device_apps.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+// ------------------ Scan Page ------------------
 class ScanPage extends StatefulWidget {
-  final bool isActive; // รับค่า active จาก main.dart
-
+  final bool isActive;
   const ScanPage({super.key, required this.isActive});
 
   @override
@@ -19,22 +22,58 @@ class _ScanPageState extends State<ScanPage>
   double progress = 0.0;
   int checkedApps = 0;
   int totalApps = 0;
-  List<Application> installedApps = [];
+  List<dynamic> installedApps = [];
 
   @override
   bool get wantKeepAlive => true;
 
   @override
+  void initState() {
+    super.initState();
+    loadCache(); // โหลด cache ตอนเข้าแอป
+  }
+
+  @override
   void didUpdateWidget(covariant ScanPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // ถ้าเปลี่ยนจาก active → ไม่ active และเคย success ให้ reset ปุ่มกลับ SCAN
-    if (!widget.isActive && scanCompleted) {
+    // ✅ Reset state ถ้าออกจากหน้านี้
+    if (!widget.isActive && oldWidget.isActive) {
       setState(() {
-        scanCompleted = false;
         isScanning = false;
+        scanCompleted = false;
       });
     }
+  }
+
+  // โหลด cache ที่เคยเก็บไว้
+  Future<void> loadCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedData = prefs.getString("recent_apps");
+    if (cachedData != null) {
+      final List decoded = jsonDecode(cachedData);
+      setState(() {
+        installedApps = decoded;
+        hasScannedOnce = true;
+      });
+    }
+  }
+
+  // บันทึกลง cache หลังสแกนเสร็จ
+  Future<void> saveCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = installedApps.map((a) {
+      if (a is ApplicationWithIcon) {
+        return {
+          "app_name": a.appName,
+          "package_name": a.packageName,
+          "installed_time": a.installTimeMillis,
+          "icon": base64Encode(a.icon), // 🔥 เก็บ icon เป็น base64
+        };
+      } else {
+        return a; // ถ้าเป็น Map จาก cache ก็เก็บตรง ๆ
+      }
+    }).toList();
+    await prefs.setString("recent_apps", jsonEncode(data));
   }
 
   void startScan() async {
@@ -67,9 +106,10 @@ class _ScanPageState extends State<ScanPage>
 
           Future.delayed(const Duration(seconds: 1), () async {
             await getInstalledApps();
+            await saveCache(); // ✅ เซฟ cache หลังสแกนเสร็จ
             setState(() {
               isScanning = false;
-              scanCompleted = true; // ✅ ค้างติ๊กถูกจนกว่าจะออกจากหน้า
+              scanCompleted = true;
               hasScannedOnce = true;
             });
           });
@@ -131,118 +171,18 @@ class _ScanPageState extends State<ScanPage>
           ),
           const SizedBox(height: 30),
 
-          // ปุ่ม Scan / Progress / Check
+          // Scan Circle
           Center(
             child: isScanning
-                ? SizedBox(
-              width: 220,
-              height: 220,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 200,
-                    height: 200,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 10,
-                      color: Colors.blue,
-                      backgroundColor: Colors.blue.withOpacity(0.1),
-                    ),
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "${(progress * 100).toInt()}%",
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Scanning...",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      Text(
-                        "Checking apps: $checkedApps/$totalApps",
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ],
-                  )
-                ],
-              ),
-            )
+                ? _buildProgress()
                 : scanCompleted
-                ? SizedBox(
-              width: 200,
-              height: 200,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 200,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                      border: Border.all(
-                        color: Colors.blue,
-                        width: 3,
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.check,
-                      size: 100, color: Colors.blue),
-                ],
-              ),
-            )
-                : GestureDetector(
-              onTap: startScan,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.3),
-                      spreadRadius: 20,
-                      blurRadius: 40,
-                    ),
-                  ],
-                  border: Border.all(
-                    color: Colors.blue,
-                    width: 3,
-                  ),
-                ),
-                child: const Center(
-                  child: Text(
-                    "SCAN",
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+                ? _buildSuccess()
+                : _buildScanButton(),
           ),
 
           const SizedBox(height: 30),
 
-          // Recently installed
+          // Recently Installed
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,19 +227,34 @@ class _ScanPageState extends State<ScanPage>
                         : 3,
                     itemBuilder: (context, index) {
                       final app = installedApps[index];
+                      String appName;
+                      int installTime;
+                      Uint8List? iconBytes;
+
+                      if (app is ApplicationWithIcon) {
+                        appName = app.appName;
+                        installTime = app.installTimeMillis;
+                        iconBytes = app.icon;
+                      } else {
+                        appName = app['app_name'];
+                        installTime = app['installed_time'];
+                        if (app['icon'] != null) {
+                          iconBytes = base64Decode(app['icon']);
+                        }
+                      }
+
                       final installedDate =
-                      DateTime.fromMillisecondsSinceEpoch(
-                          app.installTimeMillis);
-                      final daysAgo = DateTime.now()
-                          .difference(installedDate)
-                          .inDays;
+                      DateTime.fromMillisecondsSinceEpoch(installTime);
+                      final daysAgo =
+                          DateTime.now().difference(installedDate).inDays;
 
                       return ListTile(
-                        leading: app is ApplicationWithIcon
-                            ? Image.memory(app.icon,
+                        leading: iconBytes != null
+                            ? Image.memory(iconBytes,
                             width: 40, height: 40)
-                            : const Icon(Icons.android),
-                        title: Text(app.appName),
+                            : const Icon(Icons.android,
+                            color: Colors.green),
+                        title: Text(appName),
                         subtitle: Text(_installedText(daysAgo)),
                       );
                     },
@@ -307,8 +262,8 @@ class _ScanPageState extends State<ScanPage>
                       : const Center(
                     child: Text(
                       "Not yet scanned",
-                      style: TextStyle(
-                          fontSize: 14, color: Colors.black54),
+                      style:
+                      TextStyle(fontSize: 14, color: Colors.black54),
                     ),
                   ),
                 ),
@@ -319,12 +274,116 @@ class _ScanPageState extends State<ScanPage>
       ),
     );
   }
+
+  Widget _buildProgress() => SizedBox(
+    width: 220,
+    height: 220,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 200,
+          height: 200,
+          child: CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 10,
+            color: Colors.blue,
+            backgroundColor: Colors.blue.withOpacity(0.1),
+          ),
+        ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              "${(progress * 100).toInt()}%",
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Scanning...",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            Text(
+              "Checking apps: $checkedApps/$totalApps",
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        )
+      ],
+    ),
+  );
+
+  Widget _buildSuccess() => SizedBox(
+    width: 200,
+    height: 200,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 200,
+          height: 200,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+            border: Border.all(
+              color: Colors.blue,
+              width: 3,
+            ),
+          ),
+        ),
+        const Icon(Icons.check, size: 100, color: Colors.blue),
+      ],
+    ),
+  );
+
+  Widget _buildScanButton() => GestureDetector(
+    onTap: startScan,
+    child: Container(
+      width: 200,
+      height: 200,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.3),
+            spreadRadius: 20,
+            blurRadius: 40,
+          ),
+        ],
+        border: Border.all(
+          color: Colors.blue,
+          width: 3,
+        ),
+      ),
+      child: const Center(
+        child: Text(
+          "SCAN",
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
-// หน้า View All
+// ------------------ หน้า View All ------------------
 class AllAppsPage extends StatelessWidget {
-  final List<Application> apps;
-
+  final List<dynamic> apps;
   const AllAppsPage({super.key, required this.apps});
 
   String _installedText(int daysAgo) {
@@ -336,23 +395,36 @@ class AllAppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("All Installed Apps"),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text("All Installed Apps"), centerTitle: true),
       body: ListView.builder(
         itemCount: apps.length,
         itemBuilder: (context, index) {
           final app = apps[index];
+          String appName;
+          int installTime;
+          Uint8List? iconBytes;
+
+          if (app is ApplicationWithIcon) {
+            appName = app.appName;
+            installTime = app.installTimeMillis;
+            iconBytes = app.icon;
+          } else {
+            appName = app['app_name'];
+            installTime = app['installed_time'];
+            if (app['icon'] != null) {
+              iconBytes = base64Decode(app['icon']);
+            }
+          }
+
           final installedDate =
-          DateTime.fromMillisecondsSinceEpoch(app.installTimeMillis);
+          DateTime.fromMillisecondsSinceEpoch(installTime);
           final daysAgo = DateTime.now().difference(installedDate).inDays;
 
           return ListTile(
-            leading: app is ApplicationWithIcon
-                ? Image.memory(app.icon, width: 40, height: 40)
-                : const Icon(Icons.android),
-            title: Text(app.appName),
+            leading: iconBytes != null
+                ? Image.memory(iconBytes, width: 40, height: 40)
+                : const Icon(Icons.android, color: Colors.green),
+            title: Text(appName),
             subtitle: Text(_installedText(daysAgo)),
           );
         },
