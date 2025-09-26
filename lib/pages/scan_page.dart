@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:device_apps/device_apps.dart';
 
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  final bool isActive; // รับค่า active จาก main.dart
+
+  const ScanPage({super.key, required this.isActive});
 
   @override
   State<ScanPage> createState() => _ScanPageState();
@@ -13,24 +15,35 @@ class _ScanPageState extends State<ScanPage>
     with AutomaticKeepAliveClientMixin {
   bool isScanning = false;
   bool scanCompleted = false;
-  bool hasScannedOnce = false; // <<< flag ว่าเคยสแกนแล้ว
+  bool hasScannedOnce = false;
   double progress = 0.0;
   int checkedApps = 0;
   int totalApps = 0;
   List<Application> installedApps = [];
 
   @override
-  bool get wantKeepAlive => true; // <<< ทำให้ state ไม่ reset เวลาเปลี่ยนแท็บ
+  bool get wantKeepAlive => true;
+
+  @override
+  void didUpdateWidget(covariant ScanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // ถ้าเปลี่ยนจาก active → ไม่ active และเคย success ให้ reset ปุ่มกลับ SCAN
+    if (!widget.isActive && scanCompleted) {
+      setState(() {
+        scanCompleted = false;
+        isScanning = false;
+      });
+    }
+  }
 
   void startScan() async {
-    // ดึงแอปมาดูก่อนว่ามีกี่ตัว
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
       includeSystemApps: false,
       onlyAppsWithLaunchIntent: true,
     );
 
-    // กรองไม่ให้เจอแอปตัวเอง
     apps = apps
         .where((app) => app.packageName != "com.example.cybercare_app")
         .toList();
@@ -41,7 +54,6 @@ class _ScanPageState extends State<ScanPage>
       scanCompleted = false;
       progress = 0.0;
       checkedApps = 0;
-      // ❌ ห้ามล้าง installedApps = [];
     });
 
     Timer.periodic(const Duration(milliseconds: 120), (timer) {
@@ -57,8 +69,8 @@ class _ScanPageState extends State<ScanPage>
             await getInstalledApps();
             setState(() {
               isScanning = false;
-              scanCompleted = true;
-              hasScannedOnce = true; // <<< mark ว่าเคยสแกนแล้ว
+              scanCompleted = true; // ✅ ค้างติ๊กถูกจนกว่าจะออกจากหน้า
+              hasScannedOnce = true;
             });
           });
         }
@@ -73,12 +85,10 @@ class _ScanPageState extends State<ScanPage>
       onlyAppsWithLaunchIntent: true,
     );
 
-    // กรองไม่ให้เจอแอปตัวเอง
     apps = apps
         .where((app) => app.packageName != "com.example.cybercare_app")
         .toList();
 
-    // เรียงจากใหม่ไปเก่า
     apps.sort((a, b) => b.installTimeMillis.compareTo(a.installTimeMillis));
 
     setState(() {
@@ -94,7 +104,7 @@ class _ScanPageState extends State<ScanPage>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // <<< ต้องมี เพื่อให้ keepAlive ทำงาน
+    super.build(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -121,7 +131,7 @@ class _ScanPageState extends State<ScanPage>
           ),
           const SizedBox(height: 30),
 
-          // วงกลมตรงกลาง
+          // ปุ่ม Scan / Progress / Check
           Center(
             child: isScanning
                 ? SizedBox(
@@ -280,8 +290,9 @@ class _ScanPageState extends State<ScanPage>
                       final installedDate =
                       DateTime.fromMillisecondsSinceEpoch(
                           app.installTimeMillis);
-                      final daysAgo =
-                          DateTime.now().difference(installedDate).inDays;
+                      final daysAgo = DateTime.now()
+                          .difference(installedDate)
+                          .inDays;
 
                       return ListTile(
                         leading: app is ApplicationWithIcon
@@ -310,7 +321,7 @@ class _ScanPageState extends State<ScanPage>
   }
 }
 
-// ------------------ หน้า View All ------------------
+// หน้า View All
 class AllAppsPage extends StatelessWidget {
   final List<Application> apps;
 

@@ -36,14 +36,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 1; // default หน้า Scan
-
-  final List<Widget> _pages = const [
-    NotificationsPage(),
-    ScanPage(key: PageStorageKey('scan')), // ใส่ key ไว้
-    MyAppsPage(),
-    SettingsPage(),
-  ];
+  int _selectedIndex = 1; // default เปิดหน้า Scan
 
   void _onItemTapped(int index) {
     setState(() {
@@ -56,7 +49,12 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: _pages,
+        children: [
+          const NotificationsPage(),
+          ScanPage(isActive: _selectedIndex == 1), // ✅ ส่งค่า active เข้าไป
+          const MyAppsPage(),
+          const SettingsPage(),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
