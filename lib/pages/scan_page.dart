@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:device_apps/device_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 
 // ------------------ Scan Page ------------------
 class ScanPage extends StatefulWidget {
@@ -30,13 +32,12 @@ class _ScanPageState extends State<ScanPage>
   @override
   void initState() {
     super.initState();
-    loadCache(); // โหลด cache ตอนเข้าแอป
+    loadCache();
   }
 
   @override
   void didUpdateWidget(covariant ScanPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // ✅ Reset state ถ้าออกจากหน้านี้
     if (!widget.isActive && oldWidget.isActive) {
       setState(() {
         isScanning = false;
@@ -45,7 +46,51 @@ class _ScanPageState extends State<ScanPage>
     }
   }
 
-  // โหลด cache ที่เคยเก็บไว้
+  // ------------------ Device ID ------------------
+  Future<String> getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? id = prefs.getString("device_id");
+    if (id == null) {
+      id = const Uuid().v4();
+      await prefs.setString("device_id", id);
+    }
+    return id;
+  }
+
+  // ------------------ Backend ------------------
+  Future<void> uploadToBackend(String deviceId, List<Application> apps) async {
+    final registerUrl = Uri.parse("http://10.0.2.2:5000/register_device");
+    final uploadUrl = Uri.parse("http://10.0.2.2:5000/upload_apps");
+
+    // Register device
+    await http.post(
+      registerUrl,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"device_id": deviceId}),
+    );
+
+    // Upload apps
+    final body = {
+      "device_id": deviceId,
+      "apps": apps.map((a) {
+        return {
+          "app_name": a.appName,
+          "package_name": a.packageName,
+          "installed_time": a.installTimeMillis,
+        };
+      }).toList()
+    };
+
+    final res = await http.post(
+      uploadUrl,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(body),
+    );
+
+    print("Backend response: ${res.body}");
+  }
+
+  // ------------------ Cache ------------------
   Future<void> loadCache() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedData = prefs.getString("recent_apps");
@@ -58,7 +103,6 @@ class _ScanPageState extends State<ScanPage>
     }
   }
 
-  // บันทึกลง cache หลังสแกนเสร็จ
   Future<void> saveCache() async {
     final prefs = await SharedPreferences.getInstance();
     final data = installedApps.map((a) {
@@ -67,15 +111,16 @@ class _ScanPageState extends State<ScanPage>
           "app_name": a.appName,
           "package_name": a.packageName,
           "installed_time": a.installTimeMillis,
-          "icon": base64Encode(a.icon), // 🔥 เก็บ icon เป็น base64
+          "icon": base64Encode(a.icon),
         };
       } else {
-        return a; // ถ้าเป็น Map จาก cache ก็เก็บตรง ๆ
+        return a;
       }
     }).toList();
     await prefs.setString("recent_apps", jsonEncode(data));
   }
 
+  // ------------------ Scan ------------------
   void startScan() async {
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
@@ -106,7 +151,12 @@ class _ScanPageState extends State<ScanPage>
 
           Future.delayed(const Duration(seconds: 1), () async {
             await getInstalledApps();
-            await saveCache(); // ✅ เซฟ cache หลังสแกนเสร็จ
+            await saveCache();
+
+            // 🔥 upload to backend
+            final deviceId = await getOrCreateDeviceId();
+            await uploadToBackend(deviceId, installedApps.cast<Application>());
+
             setState(() {
               isScanning = false;
               scanCompleted = true;
@@ -142,6 +192,7 @@ class _ScanPageState extends State<ScanPage>
     return "Installed $daysAgo days ago";
   }
 
+  // ------------------ UI ------------------
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -171,7 +222,6 @@ class _ScanPageState extends State<ScanPage>
           ),
           const SizedBox(height: 30),
 
-          // Scan Circle
           Center(
             child: isScanning
                 ? _buildProgress()
@@ -182,7 +232,6 @@ class _ScanPageState extends State<ScanPage>
 
           const SizedBox(height: 30),
 
-          // Recently Installed
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +430,7 @@ class _ScanPageState extends State<ScanPage>
   );
 }
 
-// ------------------ หน้า View All ------------------
+// ------------------ All Apps Page ------------------
 class AllAppsPage extends StatelessWidget {
   final List<dynamic> apps;
   const AllAppsPage({super.key, required this.apps});
