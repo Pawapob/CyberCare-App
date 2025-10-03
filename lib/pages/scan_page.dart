@@ -6,8 +6,42 @@ import 'package:device_apps/device_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:provider/provider.dart';
+import '../language_provider.dart';
 
-// ------------------ Scan Page ------------------
+// ===================== Localized Strings =====================
+Map<String, Map<String, String>> scanStrings = {
+  "en": {
+    "scanTitle": "Scan",
+    "scanSubtitle": "App list scan only — no files or personal data are checked",
+    "scanButton": "SCAN",
+    "scanning": "Scanning...",
+    "checkingApps": "Checking apps",
+    "success": "Scan completed",
+    "recentlyInstalled": "Recently installed",
+    "notYetScanned": "Not yet scanned",
+    "viewAll": "View all",
+    "installedToday": "Installed today",
+    "installedYesterday": "Installed yesterday",
+    "installedDaysAgo": "Installed {days} days ago",
+  },
+  "th": {
+    "scanTitle": "สแกน",
+    "scanSubtitle": "การสแกนเก็บรายชื่อแอปเท่านั้น – ไม่ตรวจสอบไฟล์หรือข้อมูลส่วนตัว",
+    "scanButton": "สแกน",
+    "scanning": "กำลังสแกน...",
+    "checkingApps": "ตรวจสอบแอป",
+    "success": "สแกนเสร็จสิ้น",
+    "recentlyInstalled": "ติดตั้งล่าสุด",
+    "notYetScanned": "ยังไม่ได้สแกน",
+    "viewAll": "ดูทั้งหมด",
+    "installedToday": "ติดตั้งวันนี้",
+    "installedYesterday": "ติดตั้งเมื่อวาน",
+    "installedDaysAgo": "ติดตั้ง {days} วันที่แล้ว",
+  }
+};
+
+// ===================== Scan Page =====================
 class ScanPage extends StatefulWidget {
   final bool isActive;
   const ScanPage({super.key, required this.isActive});
@@ -62,14 +96,12 @@ class _ScanPageState extends State<ScanPage>
     final registerUrl = Uri.parse("http://10.0.2.2:5000/register_device");
     final uploadUrl = Uri.parse("http://10.0.2.2:5000/upload_apps");
 
-    // Register device
     await http.post(
       registerUrl,
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"device_id": deviceId}),
     );
 
-    // Upload apps
     final body = {
       "device_id": deviceId,
       "apps": apps.map((a) {
@@ -153,7 +185,6 @@ class _ScanPageState extends State<ScanPage>
             await getInstalledApps();
             await saveCache();
 
-            // 🔥 upload to backend
             final deviceId = await getOrCreateDeviceId();
             await uploadToBackend(deviceId, installedApps.cast<Application>());
 
@@ -186,10 +217,10 @@ class _ScanPageState extends State<ScanPage>
     });
   }
 
-  String _installedText(int daysAgo) {
-    if (daysAgo == 0) return "Installed today";
-    if (daysAgo == 1) return "Installed yesterday";
-    return "Installed $daysAgo days ago";
+  String installedText(int daysAgo, Map<String, String> text) {
+    if (daysAgo == 0) return text["installedToday"]!;
+    if (daysAgo == 1) return text["installedYesterday"]!;
+    return text["installedDaysAgo"]!.replaceAll("{days}", daysAgo.toString());
   }
 
   // ------------------ UI ------------------
@@ -197,12 +228,15 @@ class _ScanPageState extends State<ScanPage>
   Widget build(BuildContext context) {
     super.build(context);
 
+    final lang = Provider.of<LanguageProvider>(context).lang;
+    final text = scanStrings[lang]!;
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: const Text(
-          "Scan",
-          style: TextStyle(
+        title: Text(
+          text["scanTitle"]!,
+          style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
             fontSize: 25,
@@ -215,19 +249,26 @@ class _ScanPageState extends State<ScanPage>
       body: Column(
         children: [
           const SizedBox(height: 16),
-          const Text(
-            "App list scan only — no files or personal data are checked",
-            style: TextStyle(fontSize: 14, color: Colors.black87),
-            textAlign: TextAlign.center,
+
+          // ✅ Subtitle fixed (always present)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              text["scanSubtitle"]!,
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+              textAlign: TextAlign.center,
+            ),
           ),
+
           const SizedBox(height: 30),
 
+          // Scan Button / Progress / Success
           Center(
             child: isScanning
-                ? _buildProgress()
+                ? _buildProgress(text)
                 : scanCompleted
-                ? _buildSuccess()
-                : _buildScanButton(),
+                ? _buildSuccess(text)
+                : _buildScanButton(text),
           ),
 
           const SizedBox(height: 30),
@@ -242,9 +283,9 @@ class _ScanPageState extends State<ScanPage>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        "Recently installed",
-                        style: TextStyle(
+                      Text(
+                        text["recentlyInstalled"]!,
+                        style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       TextButton(
@@ -254,14 +295,14 @@ class _ScanPageState extends State<ScanPage>
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
-                                    AllAppsPage(apps: installedApps),
+                                    AllAppsPage(apps: installedApps, lang: lang),
                               ),
                             );
                           }
                         },
-                        child: const Text(
-                          "View all",
-                          style: TextStyle(color: Colors.blue),
+                        child: Text(
+                          text["viewAll"]!,
+                          style: const TextStyle(color: Colors.blue),
                         ),
                       ),
                     ],
@@ -294,8 +335,9 @@ class _ScanPageState extends State<ScanPage>
 
                       final installedDate =
                       DateTime.fromMillisecondsSinceEpoch(installTime);
-                      final daysAgo =
-                          DateTime.now().difference(installedDate).inDays;
+                      final daysAgo = DateTime.now()
+                          .difference(installedDate)
+                          .inDays;
 
                       return ListTile(
                         leading: iconBytes != null
@@ -304,15 +346,15 @@ class _ScanPageState extends State<ScanPage>
                             : const Icon(Icons.android,
                             color: Colors.green),
                         title: Text(appName),
-                        subtitle: Text(_installedText(daysAgo)),
+                        subtitle: Text(installedText(daysAgo, text)),
                       );
                     },
                   )
-                      : const Center(
+                      : Center(
                     child: Text(
-                      "Not yet scanned",
-                      style:
-                      TextStyle(fontSize: 14, color: Colors.black54),
+                      text["notYetScanned"]!,
+                      style: const TextStyle(
+                          fontSize: 14, color: Colors.black54),
                     ),
                   ),
                 ),
@@ -324,7 +366,7 @@ class _ScanPageState extends State<ScanPage>
     );
   }
 
-  Widget _buildProgress() => SizedBox(
+  Widget _buildProgress(Map<String, String> text) => SizedBox(
     width: 220,
     height: 220,
     child: Stack(
@@ -352,16 +394,16 @@ class _ScanPageState extends State<ScanPage>
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              "Scanning...",
-              style: TextStyle(
+            Text(
+              text["scanning"]!,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
             ),
             Text(
-              "Checking apps: $checkedApps/$totalApps",
+              "${text["checkingApps"]!}: $checkedApps/$totalApps",
               style: const TextStyle(
                 fontSize: 14,
                 color: Colors.black54,
@@ -373,7 +415,7 @@ class _ScanPageState extends State<ScanPage>
     ),
   );
 
-  Widget _buildSuccess() => SizedBox(
+  Widget _buildSuccess(Map<String, String> text) => SizedBox(
     width: 200,
     height: 200,
     child: Stack(
@@ -396,7 +438,7 @@ class _ScanPageState extends State<ScanPage>
     ),
   );
 
-  Widget _buildScanButton() => GestureDetector(
+  Widget _buildScanButton(Map<String, String> text) => GestureDetector(
     onTap: startScan,
     child: Container(
       width: 200,
@@ -416,10 +458,10 @@ class _ScanPageState extends State<ScanPage>
           width: 3,
         ),
       ),
-      child: const Center(
+      child: Center(
         child: Text(
-          "SCAN",
-          style: TextStyle(
+          text["scanButton"]!,
+          style: const TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
             color: Colors.blue,
@@ -430,21 +472,24 @@ class _ScanPageState extends State<ScanPage>
   );
 }
 
-// ------------------ All Apps Page ------------------
+// ===================== All Apps Page =====================
 class AllAppsPage extends StatelessWidget {
   final List<dynamic> apps;
-  const AllAppsPage({super.key, required this.apps});
+  final String lang;
+  const AllAppsPage({super.key, required this.apps, required this.lang});
 
-  String _installedText(int daysAgo) {
-    if (daysAgo == 0) return "Installed today";
-    if (daysAgo == 1) return "Installed yesterday";
-    return "Installed $daysAgo days ago";
+  String installedText(int daysAgo, Map<String, String> text) {
+    if (daysAgo == 0) return text["installedToday"]!;
+    if (daysAgo == 1) return text["installedYesterday"]!;
+    return text["installedDaysAgo"]!.replaceAll("{days}", daysAgo.toString());
   }
 
   @override
   Widget build(BuildContext context) {
+    final text = scanStrings[lang]!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("All Installed Apps"), centerTitle: true),
+      appBar: AppBar(title: Text(text["viewAll"]!), centerTitle: true),
       body: ListView.builder(
         itemCount: apps.length,
         itemBuilder: (context, index) {
@@ -474,7 +519,7 @@ class AllAppsPage extends StatelessWidget {
                 ? Image.memory(iconBytes, width: 40, height: 40)
                 : const Icon(Icons.android, color: Colors.green),
             title: Text(appName),
-            subtitle: Text(_installedText(daysAgo)),
+            subtitle: Text(installedText(daysAgo, text)),
           );
         },
       ),

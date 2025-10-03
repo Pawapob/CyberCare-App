@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'language_provider.dart'; // ที่มึงเขียนไว้
 import 'pages/notifications_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/myapps_page.dart';
 import 'pages/settings_page.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => LanguageProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -51,7 +58,7 @@ class _HomePageState extends State<HomePage> {
         index: _selectedIndex,
         children: [
           const NotificationsPage(),
-          ScanPage(isActive: _selectedIndex == 1), // ✅ ส่งค่า isActive เข้าไป
+          ScanPage(isActive: _selectedIndex == 1),
           const MyAppsPage(),
           const SettingsPage(),
         ],
