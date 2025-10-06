@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// ====== โมเดล/ชนิดข้อมูล (อยู่ไฟล์นี้ไฟล์เดียว) ======
+/// ====== ข้อมูล/ชนิดในไฟล์เดียว ======
 enum AlertStatus { on, off }
 
 class AppItem {
@@ -8,7 +8,7 @@ class AppItem {
   final String name;
   final String packageName;
   final DateTime installedAt;
-  final bool scanned; // true = แอปนี้ถูกนับว่า "สแกนแล้ว"
+  final bool scanned;
   final AlertStatus alertStatus;
 
   const AppItem({
@@ -39,27 +39,14 @@ class AppItem {
   }
 }
 
-/// ====== หน้า My Apps (รวมทั้ง UI + ระบบภายใน) ======
-class MyAppsPage extends StatefulWidget {
-  const MyAppsPage({super.key});
-
-  @override
-  State<MyAppsPage> createState() => _MyAppsPageState();
-}
-
 enum _MyAppsTab { all, alertOn, alertOff }
 
-class _MyAppsStateStore {
-  /// เก็บรายการแอปทั้งหมดในเครื่อง (mock ไว้ทดสอบ UI)
+class _Store {
   List<AppItem> apps = [];
-
-  /// คีย์เวิร์ดค้นหา
   String query = '';
 
-  /// ถือสถานะรวม "สแกนแล้วหรือยัง" = ต้องเป็น true ทั้งลิสต์จึงจะถือว่าสแกนเสร็จ
-  bool get hasScanned => apps.isNotEmpty && apps.every((a) => a.scanned);
+  bool get hasScanned => apps.isNotEmpty && apps.every((e) => e.scanned);
 
-  /// รีเฟรช mock เริ่มต้น
   void seed() {
     final now = DateTime.now();
     apps = [
@@ -68,7 +55,7 @@ class _MyAppsStateStore {
         name: 'Facebook',
         packageName: 'com.facebook.katana',
         installedAt: now.subtract(const Duration(days: 7)),
-        scanned: false, // เริ่มแบบ "ยังไม่สแกน"
+        scanned: true, // เปิดให้เห็นรายการตอนพัฒนา
         alertStatus: AlertStatus.on,
       ),
       AppItem(
@@ -76,7 +63,7 @@ class _MyAppsStateStore {
         name: 'LINE',
         packageName: 'jp.naver.line.android',
         installedAt: now.subtract(const Duration(days: 3)),
-        scanned: false,
+        scanned: true,
         alertStatus: AlertStatus.off,
       ),
       AppItem(
@@ -84,22 +71,13 @@ class _MyAppsStateStore {
         name: 'Chrome',
         packageName: 'com.android.chrome',
         installedAt: now.subtract(const Duration(days: 20)),
-        scanned: false,
-        alertStatus: AlertStatus.on,
-      ),
-      AppItem(
-        id: '4',
-        name: 'YouTube',
-        packageName: 'com.google.android.youtube',
-        installedAt: now.subtract(const Duration(days: 2)),
-        scanned: false,
+        scanned: true,
         alertStatus: AlertStatus.off,
       ),
     ];
   }
 
-  /// ค้นหาตามชื่อ/แพ็กเกจ
-  List<AppItem> filterByQuery(List<AppItem> list) {
+  List<AppItem> _byQuery(List<AppItem> list) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return list;
     return list
@@ -109,180 +87,230 @@ class _MyAppsStateStore {
         .toList();
   }
 
-  /// คืนลิสต์ตามแท็บ
   List<AppItem> byTab(_MyAppsTab tab) {
-    final base = filterByQuery(apps);
+    final base = _byQuery(apps);
     switch (tab) {
       case _MyAppsTab.all:
         return base;
       case _MyAppsTab.alertOn:
-        return base.where((a) => a.alertStatus == AlertStatus.on).toList();
+        return base.where((e) => e.alertStatus == AlertStatus.on).toList();
       case _MyAppsTab.alertOff:
-        return base.where((a) => a.alertStatus == AlertStatus.off).toList();
+        return base.where((e) => e.alertStatus == AlertStatus.off).toList();
     }
   }
 
-  /// Toggle แจ้งเตือนรายแอป
-  void toggleAlert(AppItem app) {
-    final idx = apps.indexWhere((e) => e.id == app.id);
-    if (idx == -1) return;
-    final to =
-    app.alertStatus == AlertStatus.on ? AlertStatus.off : AlertStatus.on;
-    apps[idx] = app.copyWith(alertStatus: to);
+  void toggle(AppItem app) {
+    final i = apps.indexWhere((e) => e.id == app.id);
+    if (i == -1) return;
+    apps[i] = app.copyWith(
+      alertStatus:
+      app.alertStatus == AlertStatus.on ? AlertStatus.off : AlertStatus.on,
+    );
   }
 
-  /// ทำให้ "ทุกแอปที่อยู่ในแท็บปัจจุบัน" เปิดแจ้งเตือน
   void openAllInTab(_MyAppsTab tab) {
     final ids = byTab(tab).map((e) => e.id).toSet();
     apps = apps
-        .map((a) => ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.on) : a)
+        .map((a) =>
+    ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.on) : a)
         .toList();
   }
 
-  /// ทำให้ "ทุกแอปที่อยู่ในแท็บปัจจุบัน" ปิดแจ้งเตือน
   void closeAllInTab(_MyAppsTab tab) {
     final ids = byTab(tab).map((e) => e.id).toSet();
     apps = apps
-        .map((a) => ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.off) : a)
+        .map((a) =>
+    ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.off) : a)
         .toList();
-  }
-
-  /// จำลองสแกนสำเร็จ (ทุกแอปถูก mark scanned)
-  void markScanned() {
-    apps = apps.map((a) => a.copyWith(scanned: true)).toList();
-  }
-
-  /// รีเซ็ตกลับเป็น "ยังไม่สแกน"
-  void resetUnscanned() {
-    apps = apps.map((a) => a.copyWith(scanned: false)).toList();
   }
 }
 
-class _MyAppsPageState extends State<MyAppsPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-  final _store = _MyAppsStateStore();
+/// ====== หน้า My Apps ======
+class MyAppsPage extends StatefulWidget {
+  const MyAppsPage({super.key});
+  @override
+  State<MyAppsPage> createState() => _MyAppsPageState();
+}
+
+class _MyAppsPageState extends State<MyAppsPage> {
+  final _store = _Store();
   _MyAppsTab _tab = _MyAppsTab.all;
 
   @override
   void initState() {
     super.initState();
     _store.seed();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.indexIsChanging) return;
-      setState(() => _tab = _MyAppsTab.values[_tabController.index]);
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  /// ปุ่มล่าง (Open All / Close All) จะแสดงเฉพาะเมื่อ:
-  /// - สแกนแล้ว และ
-  /// - อยู่แท็บ Alert-on (โชว์ Close All) หรือ Alert-off (โชว์ Open All) และ
-  /// - ลิสต์ในแท็บนั้นไม่ว่าง
-  bool get _showBulkButtons {
-    if (!_store.hasScanned) return false;
-    final list = _store.byTab(_tab);
-    if (list.isEmpty) return false;
-    return _tab == _MyAppsTab.alertOn || _tab == _MyAppsTab.alertOff;
   }
 
   @override
   Widget build(BuildContext context) {
-    final list = _store.byTab(_tab);
+    final items = _store.byTab(_tab);
 
     return Scaffold(
+      backgroundColor: Colors.white, // พื้นหลังขาว
       appBar: AppBar(
-        title: const Text('My Apps'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'Alert-on'),
-            Tab(text: 'Alert-off'),
-          ],
-        ),
-        actions: [
-          // View All = กลับแท็บ All + ล้าง search
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _tabController.animateTo(0);
-                _tab = _MyAppsTab.all;
-                _store.query = '';
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Showing all apps')),
-              );
-            },
-            child: const Text('View All'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () async {
-              final text = await showSearch<String>(
-                context: context,
-                delegate: _AppSearchDelegate(initial: _store.query),
-              );
-              if (text != null) {
-                setState(() => _store.query = text);
-              }
-            },
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Developer',
-            onSelected: (v) {
-              setState(() {
-                if (v == 'scan') _store.markScanned();
-                if (v == 'unscan') _store.resetUnscanned();
-              });
-            },
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(value: 'scan', child: Text('Mark Scanned')),
-              PopupMenuItem(value: 'unscan', child: Text('Reset Unscanned')),
-            ],
-          ),
-        ],
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 0,
+        title: const Text('My Application'),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildTabList(_MyAppsTab.all),
-          _buildTabList(_MyAppsTab.alertOn),
-          _buildTabList(_MyAppsTab.alertOff),
+          // ====== Search bar : ไอคอนแว่นอยู่ขวา ======
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(.08),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.black12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              height: 44,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      onChanged: (v) => setState(() => _store.query = v),
+                      decoration: const InputDecoration(
+                        hintText: 'Hinted search text',
+                        border: InputBorder.none,
+                        isCollapsed: true,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => FocusScope.of(context).unfocus(),
+                    icon: const Icon(Icons.search),
+                    splashRadius: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ====== ฟิลเตอร์ชิปโทนฟ้า-ขาว ======
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _FilterChip(
+                  label: 'All',
+                  selected: _tab == _MyAppsTab.all,
+                  onTap: () => setState(() => _tab = _MyAppsTab.all),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Alerts On',
+                  selected: _tab == _MyAppsTab.alertOn,
+                  onTap: () => setState(() => _tab = _MyAppsTab.alertOn),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Alerts Off',
+                  selected: _tab == _MyAppsTab.alertOff,
+                  onTap: () => setState(() => _tab = _MyAppsTab.alertOff),
+                ),
+              ],
+            ),
+          ),
+
+          // ====== รายการแบบ iOS-style: พื้นหลังขาว + Divider ======
+          Expanded(
+            child: !_store.hasScanned
+                ? const _EmptyState(
+              textTop: 'There is no app',
+              textBottom: 'you have to scan first',
+            )
+                : items.isEmpty
+                ? const _EmptyState(
+              textTop: 'No apps found',
+              textBottom: 'try adjusting your search',
+            )
+                : ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (context, _) =>
+              const Divider(height: 1, color: Colors.black12),
+              itemBuilder: (ctx, i) {
+                final app = items[i];
+                final installedAgo =
+                    DateTime.now().difference(app.installedAt).inDays;
+                return ListTile(
+                  tileColor: Colors.white,
+                  title: Text(
+                    app.name,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    'Installed ~ $installedAgo d • ${app.packageName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 13,
+                    ),
+                  ),
+                  // ไม่มีโลโก้/ไอคอนนำหน้า ตามที่ขอ
+                  trailing: Switch(
+                    value: app.alertStatus == AlertStatus.on,
+                    onChanged: (_) =>
+                        setState(() => _store.toggle(app)),
+
+                    // ====== โทนสีสวิตช์แบบ iOS ======
+                    activeColor: Colors.white,        // ปุ่มวงกลมตอน ON
+                    activeTrackColor: Colors.blue,    // แถบเมื่อ ON = ฟ้า
+                    inactiveThumbColor: Colors.white, // ปุ่มวงกลมตอน OFF
+                    inactiveTrackColor: Colors.grey,  // แถบเมื่อ OFF = เทา
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: _showBulkButtons
+
+      // ====== ปุ่ม Open All / Close All (โทนฟ้า) ======
+      bottomNavigationBar: _showBulkButtons(items)
           ? SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               if (_tab == _MyAppsTab.alertOn)
                 Expanded(
-                  child: FilledButton.tonal(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                      side: const BorderSide(color: Colors.blue),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                     onPressed: () {
                       setState(() => _store.closeAllInTab(_tab));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Closed all alerts in this tab')),
-                      );
+                      _toast(context, 'Closed all alerts');
                     },
                     child: const Text('Close All'),
                   ),
                 ),
+              if (_tab == _MyAppsTab.alertOn &&
+                  _tab == _MyAppsTab.alertOff)
+                const SizedBox(width: 12),
               if (_tab == _MyAppsTab.alertOff)
                 Expanded(
                   child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                     onPressed: () {
                       setState(() => _store.openAllInTab(_tab));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Opened all alerts in this tab')),
-                      );
+                      _toast(context, 'Opened all alerts');
                     },
                     child: const Text('Open All'),
                   ),
@@ -295,145 +323,60 @@ class _MyAppsPageState extends State<MyAppsPage>
     );
   }
 
-  Widget _buildTabList(_MyAppsTab tab) {
-    // ยังไม่สแกน → แสดง empty state ตามสเปก
-    if (!_store.hasScanned) {
-      return _EmptyState(
-        icon: Icons.shield_moon_outlined,
-        title: 'No data yet',
-        message: 'Please scan your device first to see your apps.',
-        actionLabel: 'Go to Scan',
-        onAction: () {
-          // ปล่อยให้ main/เพื่อนจัดการหน้า Scan; ที่นี่ปิดหน้าปัจจุบันพอ
-          Navigator.of(context).maybePop();
-        },
-      );
-    }
+  bool _showBulkButtons(List<AppItem> items) {
+    if (!_store.hasScanned) return false;
+    if (items.isEmpty) return false;
+    return _tab == _MyAppsTab.alertOn || _tab == _MyAppsTab.alertOff;
+  }
 
-    final items = _store.byTab(tab);
-    if (items.isEmpty) {
-      return _EmptyState(
-        icon: Icons.apps_outlined,
-        title: tab == _MyAppsTab.alertOn
-            ? 'No apps with alerts ON'
-            : tab == _MyAppsTab.alertOff
-            ? 'No apps with alerts OFF'
-            : 'No apps found',
-        message: tab == _MyAppsTab.all
-            ? 'Try adjusting your search.'
-            : 'Use the bulk button below to switch all.',
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 96),
-      itemCount: items.length,
-      itemBuilder: (ctx, i) {
-        final app = items[i];
-        final installedAgo = DateTime.now().difference(app.installedAt).inDays;
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Text(app.name.isNotEmpty ? app.name[0] : '?'),
-            ),
-            title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              'Installed ~ $installedAgo d • ${app.packageName}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Switch(
-              value: app.alertStatus == AlertStatus.on,
-              onChanged: (_) {
-                setState(() => _store.toggleAlert(app));
-              },
-            ),
-          ),
-        );
-      },
-    );
+  void _toast(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
 
-/// ====== คอมโพเนนต์ประกอบ (อยู่ไฟล์นี้ไฟล์เดียว) ======
-
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
+/// ====== Widgets ย่อย ======
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 64),
-            const SizedBox(height: 12),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 16),
-              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-            ],
-          ],
-        ),
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      labelStyle: TextStyle(
+        color: Colors.black87,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       ),
+      backgroundColor: Colors.grey.shade200,
+      selectedColor: Colors.blue.shade100,
+      side: BorderSide(color: selected ? Colors.blue : Colors.black12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
     );
   }
 }
 
-/// Search delegate (ค้นหาโดยไม่ต้องมีไฟล์อื่น)
-class _AppSearchDelegate extends SearchDelegate<String> {
-  final String initial;
-  _AppSearchDelegate({required this.initial}) {
-    query = initial;
-  }
+class _EmptyState extends StatelessWidget {
+  final String textTop;
+  final String textBottom;
+  const _EmptyState({required this.textTop, required this.textBottom});
 
   @override
-  List<Widget> buildActions(BuildContext context) => [
-    if (query.isNotEmpty)
-      IconButton(
-        icon: const Icon(Icons.clear),
-        onPressed: () => query = '',
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        '$textTop\n$textBottom',
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.black54),
       ),
-  ];
-
-  @override
-  Widget buildLeading(BuildContext context) => IconButton(
-    icon: const Icon(Icons.arrow_back),
-    onPressed: () => close(context, initial),
-  );
-
-  @override
-  Widget buildResults(BuildContext context) => Center(
-    child: ElevatedButton(
-      onPressed: () => close(context, query),
-      child: const Text('Apply Search'),
-    ),
-  );
-
-  @override
-  Widget buildSuggestions(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(16),
-    child: Text('Search apps with keyword: $query'),
-  );
+    );
+  }
 }
