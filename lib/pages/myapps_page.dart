@@ -1,195 +1,139 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
-/// ====== ข้อมูล/ชนิดในไฟล์เดียว ======
+// ====== ENUM ======
 enum AlertStatus { on, off }
 
 class AppItem {
   final String id;
   final String name;
-  final String packageName;
   final DateTime installedAt;
-  final bool scanned;
   final AlertStatus alertStatus;
+  final String? icon;
 
   const AppItem({
     required this.id,
     required this.name,
-    required this.packageName,
     required this.installedAt,
-    required this.scanned,
     required this.alertStatus,
+    this.icon,
   });
-
-  AppItem copyWith({
-    String? id,
-    String? name,
-    String? packageName,
-    DateTime? installedAt,
-    bool? scanned,
-    AlertStatus? alertStatus,
-  }) {
-    return AppItem(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      packageName: packageName ?? this.packageName,
-      installedAt: installedAt ?? this.installedAt,
-      scanned: scanned ?? this.scanned,
-      alertStatus: alertStatus ?? this.alertStatus,
-    );
-  }
 }
 
 enum _MyAppsTab { all, alertOn, alertOff }
 
-class _Store {
-  List<AppItem> apps = [];
-  String query = '';
-
-  bool get hasScanned => apps.isNotEmpty && apps.every((e) => e.scanned);
-
-  void seed() {
-    final now = DateTime.now();
-    apps = [
-      AppItem(
-        id: '1',
-        name: 'Facebook',
-        packageName: 'com.facebook.katana',
-        installedAt: now.subtract(const Duration(days: 7)),
-        scanned: true, // เปิดให้เห็นรายการตอนพัฒนา
-        alertStatus: AlertStatus.on,
-      ),
-      AppItem(
-        id: '2',
-        name: 'LINE',
-        packageName: 'jp.naver.line.android',
-        installedAt: now.subtract(const Duration(days: 3)),
-        scanned: true,
-        alertStatus: AlertStatus.off,
-      ),
-      AppItem(
-        id: '3',
-        name: 'Chrome',
-        packageName: 'com.android.chrome',
-        installedAt: now.subtract(const Duration(days: 20)),
-        scanned: true,
-        alertStatus: AlertStatus.off,
-      ),
-    ];
-  }
-
-  List<AppItem> _byQuery(List<AppItem> list) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return list;
-    return list
-        .where((a) =>
-    a.name.toLowerCase().contains(q) ||
-        a.packageName.toLowerCase().contains(q))
-        .toList();
-  }
-
-  List<AppItem> byTab(_MyAppsTab tab) {
-    final base = _byQuery(apps);
-    switch (tab) {
-      case _MyAppsTab.all:
-        return base;
-      case _MyAppsTab.alertOn:
-        return base.where((e) => e.alertStatus == AlertStatus.on).toList();
-      case _MyAppsTab.alertOff:
-        return base.where((e) => e.alertStatus == AlertStatus.off).toList();
-    }
-  }
-
-  void toggle(AppItem app) {
-    final i = apps.indexWhere((e) => e.id == app.id);
-    if (i == -1) return;
-    apps[i] = app.copyWith(
-      alertStatus:
-      app.alertStatus == AlertStatus.on ? AlertStatus.off : AlertStatus.on,
-    );
-  }
-
-  void openAllInTab(_MyAppsTab tab) {
-    final ids = byTab(tab).map((e) => e.id).toSet();
-    apps = apps
-        .map((a) =>
-    ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.on) : a)
-        .toList();
-  }
-
-  void closeAllInTab(_MyAppsTab tab) {
-    final ids = byTab(tab).map((e) => e.id).toSet();
-    apps = apps
-        .map((a) =>
-    ids.contains(a.id) ? a.copyWith(alertStatus: AlertStatus.off) : a)
-        .toList();
-  }
-}
-
-/// ====== หน้า My Apps ======
 class MyAppsPage extends StatefulWidget {
   const MyAppsPage({super.key});
+
   @override
   State<MyAppsPage> createState() => _MyAppsPageState();
 }
 
 class _MyAppsPageState extends State<MyAppsPage> {
-  final _store = _Store();
+  List<AppItem> apps = [];
   _MyAppsTab _tab = _MyAppsTab.all;
 
   @override
   void initState() {
     super.initState();
-    _store.seed();
+    loadAppsFromCache();
+  }
+
+  Future<void> loadAppsFromCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedData = prefs.getString("recent_apps");
+    if (cachedData != null) {
+      final List decoded = jsonDecode(cachedData);
+      setState(() {
+        apps = decoded.map<AppItem>((a) {
+          final installedTime = a["installed_time"] ?? 0;
+          return AppItem(
+            id: a["package_name"] ?? "",
+            name: a["app_name"] ?? "",
+            installedAt: DateTime.fromMillisecondsSinceEpoch(installedTime),
+            alertStatus: AlertStatus.on,
+            icon: a["icon"],
+          );
+        }).toList();
+      });
+    }
+  }
+
+  List<AppItem> byTab() {
+    switch (_tab) {
+      case _MyAppsTab.alertOn:
+        return apps.where((a) => a.alertStatus == AlertStatus.on).toList();
+      case _MyAppsTab.alertOff:
+        return apps.where((a) => a.alertStatus == AlertStatus.off).toList();
+      default:
+        return apps;
+    }
+  }
+
+  // ✅ อัปเดตสถานะใน backend
+  Future<void> updateAlertStatus(String packageName, String alertStatus) async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceId = prefs.getString("device_id");
+    if (deviceId == null) return;
+
+    final url = Uri.parse("http://10.0.2.2:5000/update_alert_status");
+    final body = jsonEncode({
+      "device_id": deviceId,
+      "package_name": packageName,
+      "alert_status": alertStatus,
+    });
+
+    try {
+      final res = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: body,
+      );
+      print("Update status response: ${res.body}");
+    } catch (e) {
+      print("Error updating alert status: $e");
+    }
+  }
+
+  void toggle(AppItem app) async {
+    final newStatus =
+    app.alertStatus == AlertStatus.on ? AlertStatus.off : AlertStatus.on;
+
+    setState(() {
+      final i = apps.indexWhere((e) => e.id == app.id);
+      if (i != -1) {
+        apps[i] = AppItem(
+          id: app.id,
+          name: app.name,
+          installedAt: app.installedAt,
+          alertStatus: newStatus,
+          icon: app.icon,
+        );
+      }
+    });
+
+    await updateAlertStatus(app.id, newStatus == AlertStatus.on ? "on" : "off");
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = _store.byTab(_tab);
+    final items = byTab();
 
     return Scaffold(
-      backgroundColor: Colors.white, // พื้นหลังขาว
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        title: const Text('My Applications',
+            style: TextStyle(fontWeight: FontWeight.w600)),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        title: const Text('My Application'),
+        foregroundColor: Colors.black,
       ),
       body: Column(
         children: [
-          // ====== Search bar : ไอคอนแว่นอยู่ขวา ======
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(.08),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: Colors.black12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              height: 44,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      onChanged: (v) => setState(() => _store.query = v),
-                      decoration: const InputDecoration(
-                        hintText: 'Hinted search text',
-                        border: InputBorder.none,
-                        isCollapsed: true,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => FocusScope.of(context).unfocus(),
-                    icon: const Icon(Icons.search),
-                    splashRadius: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ====== ฟิลเตอร์ชิปโทนฟ้า-ขาว ======
+          const SizedBox(height: 8),
+          // Filter Chips
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
@@ -216,52 +160,42 @@ class _MyAppsPageState extends State<MyAppsPage> {
             ),
           ),
 
-          // ====== รายการแบบ iOS-style: พื้นหลังขาว + Divider ======
           Expanded(
-            child: !_store.hasScanned
-                ? const _EmptyState(
-              textTop: 'There is no app',
-              textBottom: 'you have to scan first',
-            )
-                : items.isEmpty
-                ? const _EmptyState(
-              textTop: 'No apps found',
-              textBottom: 'try adjusting your search',
+            child: apps.isEmpty
+                ? const Center(
+              child: Text(
+                "No apps found\nTry scanning first",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54),
+              ),
             )
                 : ListView.separated(
               itemCount: items.length,
-              separatorBuilder: (context, _) =>
+              separatorBuilder: (_, __) =>
               const Divider(height: 1, color: Colors.black12),
-              itemBuilder: (ctx, i) {
+              itemBuilder: (context, i) {
                 final app = items[i];
-                final installedAgo =
+                final daysAgo =
                     DateTime.now().difference(app.installedAt).inDays;
+
                 return ListTile(
-                  tileColor: Colors.white,
-                  title: Text(
-                    app.name,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                  subtitle: Text(
-                    'Installed ~ $installedAgo d • ${app.packageName}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontSize: 13,
-                    ),
-                  ),
-                  // ไม่มีโลโก้/ไอคอนนำหน้า ตามที่ขอ
+                  leading: (app.icon != null)
+                      ? Image.memory(base64Decode(app.icon!),
+                      width: 40, height: 40)
+                      : const Icon(Icons.android, color: Colors.green),
+                  title: Text(app.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500, fontSize: 15)),
+                  subtitle: Text('Installed $daysAgo days ago',
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.black45)),
                   trailing: Switch(
                     value: app.alertStatus == AlertStatus.on,
-                    onChanged: (_) =>
-                        setState(() => _store.toggle(app)),
-
-                    // ====== โทนสีสวิตช์แบบ iOS ======
-                    activeColor: Colors.white,        // ปุ่มวงกลมตอน ON
-                    activeTrackColor: Colors.blue,    // แถบเมื่อ ON = ฟ้า
-                    inactiveThumbColor: Colors.white, // ปุ่มวงกลมตอน OFF
-                    inactiveTrackColor: Colors.grey,  // แถบเมื่อ OFF = เทา
+                    onChanged: (_) => toggle(app),
+                    activeColor: Colors.white,
+                    activeTrackColor: Colors.blue,
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: Colors.grey,
                   ),
                 );
               },
@@ -269,72 +203,10 @@ class _MyAppsPageState extends State<MyAppsPage> {
           ),
         ],
       ),
-
-      // ====== ปุ่ม Open All / Close All (โทนฟ้า) ======
-      bottomNavigationBar: _showBulkButtons(items)
-          ? SafeArea(
-        child: Padding(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              if (_tab == _MyAppsTab.alertOn)
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blue,
-                      side: const BorderSide(color: Colors.blue),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: () {
-                      setState(() => _store.closeAllInTab(_tab));
-                      _toast(context, 'Closed all alerts');
-                    },
-                    child: const Text('Close All'),
-                  ),
-                ),
-              if (_tab == _MyAppsTab.alertOn &&
-                  _tab == _MyAppsTab.alertOff)
-                const SizedBox(width: 12),
-              if (_tab == _MyAppsTab.alertOff)
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onPressed: () {
-                      setState(() => _store.openAllInTab(_tab));
-                      _toast(context, 'Opened all alerts');
-                    },
-                    child: const Text('Open All'),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      )
-          : null,
     );
-  }
-
-  bool _showBulkButtons(List<AppItem> items) {
-    if (!_store.hasScanned) return false;
-    if (items.isEmpty) return false;
-    return _tab == _MyAppsTab.alertOn || _tab == _MyAppsTab.alertOff;
-  }
-
-  void _toast(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
 
-/// ====== Widgets ย่อย ======
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -359,24 +231,6 @@ class _FilterChip extends StatelessWidget {
       selectedColor: Colors.blue.shade100,
       side: BorderSide(color: selected ? Colors.blue : Colors.black12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 0,
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final String textTop;
-  final String textBottom;
-  const _EmptyState({required this.textTop, required this.textBottom});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        '$textTop\n$textBottom',
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.black54),
-      ),
     );
   }
 }
