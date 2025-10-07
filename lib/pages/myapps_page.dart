@@ -3,6 +3,38 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import '../language_provider.dart';
+
+// ===================== Localized Strings =====================
+Map<String, Map<String, String>> myAppsStrings = {
+  "en": {
+    "title": "My Applications",
+    "searchHint": "Hinted search text",
+    "all": "All",
+    "alertsOn": "Alerts On",
+    "alertsOff": "Alerts Off",
+    "openAll": "Open All",
+    "closeAll": "Close All",
+    "noApps": "No apps found\nTry scanning first",
+    "installedDaysAgo": "Installed {days} days ago",
+    "installedToday": "Installed today",
+    "installedYesterday": "Installed yesterday",
+  },
+  "th": {
+    "title": "แอปของฉัน",
+    "searchHint": "ค้นหาแอป...",
+    "all": "ทั้งหมด",
+    "alertsOn": "เปิดแจ้งเตือน",
+    "alertsOff": "ปิดแจ้งเตือน",
+    "openAll": "เปิดทั้งหมด",
+    "closeAll": "ปิดทั้งหมด",
+    "noApps": "ไม่พบแอป\nโปรดลองสแกนก่อน",
+    "installedDaysAgo": "ติดตั้งเมื่อ {days} วันที่แล้ว",
+    "installedToday": "ติดตั้งวันนี้",
+    "installedYesterday": "ติดตั้งเมื่อวานนี้",
+  }
+};
 
 // ====== ENUM ======
 enum AlertStatus { on, off }
@@ -21,6 +53,16 @@ class AppItem {
     required this.alertStatus,
     this.icon,
   });
+
+  AppItem copyWith({AlertStatus? alertStatus}) {
+    return AppItem(
+      id: id,
+      name: name,
+      installedAt: installedAt,
+      alertStatus: alertStatus ?? this.alertStatus,
+      icon: icon,
+    );
+  }
 }
 
 enum _MyAppsTab { all, alertOn, alertOff }
@@ -35,6 +77,7 @@ class MyAppsPage extends StatefulWidget {
 class _MyAppsPageState extends State<MyAppsPage> {
   List<AppItem> apps = [];
   _MyAppsTab _tab = _MyAppsTab.all;
+  String searchQuery = "";
 
   @override
   void initState() {
@@ -63,14 +106,27 @@ class _MyAppsPageState extends State<MyAppsPage> {
   }
 
   List<AppItem> byTab() {
+    List<AppItem> filtered = [];
     switch (_tab) {
       case _MyAppsTab.alertOn:
-        return apps.where((a) => a.alertStatus == AlertStatus.on).toList();
+        filtered = apps.where((a) => a.alertStatus == AlertStatus.on).toList();
+        break;
       case _MyAppsTab.alertOff:
-        return apps.where((a) => a.alertStatus == AlertStatus.off).toList();
+        filtered = apps.where((a) => a.alertStatus == AlertStatus.off).toList();
+        break;
       default:
-        return apps;
+        filtered = apps;
     }
+
+    if (searchQuery.isNotEmpty) {
+      filtered = filtered
+          .where((a) =>
+      a.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          a.id.toLowerCase().contains(searchQuery.toLowerCase()))
+          .toList();
+    }
+
+    return filtered;
   }
 
   // ✅ อัปเดตสถานะใน backend
@@ -104,35 +160,77 @@ class _MyAppsPageState extends State<MyAppsPage> {
 
     setState(() {
       final i = apps.indexWhere((e) => e.id == app.id);
-      if (i != -1) {
-        apps[i] = AppItem(
-          id: app.id,
-          name: app.name,
-          installedAt: app.installedAt,
-          alertStatus: newStatus,
-          icon: app.icon,
-        );
-      }
+      if (i != -1) apps[i] = apps[i].copyWith(alertStatus: newStatus);
     });
 
     await updateAlertStatus(app.id, newStatus == AlertStatus.on ? "on" : "off");
   }
 
+  // ✅ Multi toggle สำหรับ “Open All” / “Close All”
+  Future<void> toggleAll(bool turnOn) async {
+    final items = byTab();
+    for (final app in items) {
+      final newStatus = turnOn ? AlertStatus.on : AlertStatus.off;
+      await updateAlertStatus(app.id, turnOn ? "on" : "off");
+      setState(() {
+        final i = apps.indexWhere((e) => e.id == app.id);
+        if (i != -1) apps[i] = apps[i].copyWith(alertStatus: newStatus);
+      });
+    }
+  }
+
+  // 🔹 Helper: คำแปลข้อความ "Installed ... days ago"
+  String installedText(int daysAgo, Map<String, String> text) {
+    if (daysAgo == 0) return text["installedToday"]!;
+    if (daysAgo == 1) return text["installedYesterday"]!;
+    return text["installedDaysAgo"]!.replaceAll("{days}", daysAgo.toString());
+  }
+
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context).lang;
+    final text = myAppsStrings[lang]!;
     final items = byTab();
+
+    final showBulkButtons =
+        _tab == _MyAppsTab.alertOn || _tab == _MyAppsTab.alertOff;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('My Applications',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          text["title"]!,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
       body: Column(
         children: [
           const SizedBox(height: 8),
+
+          // 🔍 Search Box
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: text["searchHint"]!,
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding:
+                const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (val) {
+                setState(() => searchQuery = val);
+              },
+            ),
+          ),
+
           // Filter Chips
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -140,19 +238,19 @@ class _MyAppsPageState extends State<MyAppsPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _FilterChip(
-                  label: 'All',
+                  label: text["all"]!,
                   selected: _tab == _MyAppsTab.all,
                   onTap: () => setState(() => _tab = _MyAppsTab.all),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: 'Alerts On',
+                  label: text["alertsOn"]!,
                   selected: _tab == _MyAppsTab.alertOn,
                   onTap: () => setState(() => _tab = _MyAppsTab.alertOn),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: 'Alerts Off',
+                  label: text["alertsOff"]!,
                   selected: _tab == _MyAppsTab.alertOff,
                   onTap: () => setState(() => _tab = _MyAppsTab.alertOff),
                 ),
@@ -160,13 +258,14 @@ class _MyAppsPageState extends State<MyAppsPage> {
             ),
           ),
 
+          // Apps List
           Expanded(
             child: apps.isEmpty
-                ? const Center(
+                ? Center(
               child: Text(
-                "No apps found\nTry scanning first",
+                text["noApps"]!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black54),
+                style: const TextStyle(color: Colors.black54),
               ),
             )
                 : ListView.separated(
@@ -183,12 +282,16 @@ class _MyAppsPageState extends State<MyAppsPage> {
                       ? Image.memory(base64Decode(app.icon!),
                       width: 40, height: 40)
                       : const Icon(Icons.android, color: Colors.green),
-                  title: Text(app.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w500, fontSize: 15)),
-                  subtitle: Text('Installed $daysAgo days ago',
-                      style: const TextStyle(
-                          fontSize: 12, color: Colors.black45)),
+                  title: Text(
+                    app.name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w500, fontSize: 15),
+                  ),
+                  subtitle: Text(
+                    installedText(daysAgo, text),
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.black45),
+                  ),
                   trailing: Switch(
                     value: app.alertStatus == AlertStatus.on,
                     onChanged: (_) => toggle(app),
@@ -201,12 +304,61 @@ class _MyAppsPageState extends State<MyAppsPage> {
               },
             ),
           ),
+
+          // ✅ ปุ่ม Open All / Close All
+          if (showBulkButtons)
+            SafeArea(
+              child: Padding(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    if (_tab == _MyAppsTab.alertOn)
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => toggleAll(false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue,
+                            side: const BorderSide(color: Colors.blue),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(text["closeAll"]!),
+                        ),
+                      ),
+                    if (_tab == _MyAppsTab.alertOn &&
+                        _tab == _MyAppsTab.alertOff)
+                      const SizedBox(width: 12),
+                    if (_tab == _MyAppsTab.alertOff)
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => toggleAll(true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(text["openAll"]!),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
+// ===================== Filter Chip Widget =====================
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
