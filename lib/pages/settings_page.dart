@@ -52,7 +52,7 @@ Future<String> getOrCreateDeviceId() async {
   final prefs = await SharedPreferences.getInstance();
   String? id = prefs.getString("device_id");
   if (id == null) {
-    id = DateTime.now().millisecondsSinceEpoch.toString(); // simple fallback
+    id = DateTime.now().millisecondsSinceEpoch.toString();
     await prefs.setString("device_id", id);
   }
   return id;
@@ -182,6 +182,46 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
     const TimeOfDay(hour: 20, minute: 30),
   ];
 
+  // ✅ โหลดค่าจาก backend
+  Future<void> loadPreferences() async {
+    final deviceId = await getOrCreateDeviceId();
+    final url =
+    Uri.parse("http://10.0.2.2:5000/get_preferences?device_id=$deviceId");
+
+    try {
+      final res = await http.get(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+
+        setState(() {
+          _enabled = (data["mode"] == "3-times");
+          if (_enabled && data["time1"] != null) {
+            _times = [
+              _parseTime(data["time1"]),
+              _parseTime(data["time2"]),
+              _parseTime(data["time3"]),
+            ];
+          }
+        });
+      } else {
+        print("No preferences found or server error: ${res.body}");
+      }
+    } catch (e) {
+      print("Error loading preferences: $e");
+    }
+  }
+
+  TimeOfDay _parseTime(String t) {
+    final parts = t.split(":");
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadPreferences(); // ✅ โหลดค่าจาก database ตอนเปิดหน้า
+  }
+
   Future<void> _pickTimeCupertino(int index, Map<String, String> text) async {
     TimeOfDay newTime = _times[index];
     await showModalBottomSheet(
@@ -258,10 +298,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
         title: Text(text["timeSetting"]!),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.white,
-          statusBarIconBrightness: Brightness.dark,
-        ),
         elevation: 0,
       ),
       body: Padding(
