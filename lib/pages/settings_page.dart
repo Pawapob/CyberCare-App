@@ -87,6 +87,12 @@ Future<void> updatePreferences({
   print("Update Preferences response: ${res.body}");
 }
 
+// เพิ่ม helper สำหรับแปลงเวลา
+TimeOfDay _parseTime(String t) {
+  final parts = t.split(":");
+  return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+}
+
 // ===================================================
 // Settings Page
 // ===================================================
@@ -117,6 +123,8 @@ class SettingsPage extends StatelessWidget {
             subtitle: Text(lang == "en" ? "English" : "ไทย"),
             trailing: DropdownButton<String>(
               value: lang,
+              dropdownColor: Colors.white, // ✅ เมนู dropdown สีขาว
+              style: const TextStyle(color: Colors.black), // ✅ ตัวอักษรสีดำ
               items: const [
                 DropdownMenuItem(value: "en", child: Text("English")),
                 DropdownMenuItem(value: "th", child: Text("ไทย")),
@@ -127,15 +135,36 @@ class SettingsPage extends StatelessWidget {
                       .setLang(val);
 
                   final deviceId = await getOrCreateDeviceId();
+
+                  // ✅ ดึง mode ปัจจุบันจาก backend ก่อนอัปภาษา
+                  final prefUrl = Uri.parse(
+                      "http://10.0.2.2:5000/get_preferences?device_id=$deviceId");
+                  final prefRes = await http.get(prefUrl);
+                  bool currentEnabled = true;
+                  List<TimeOfDay> currentTimes = [
+                    const TimeOfDay(hour: 7, minute: 0),
+                    const TimeOfDay(hour: 12, minute: 30),
+                    const TimeOfDay(hour: 20, minute: 30),
+                  ];
+
+                  if (prefRes.statusCode == 200) {
+                    final data = jsonDecode(prefRes.body);
+                    currentEnabled = (data["mode"] == "3-times");
+                    if (currentEnabled && data["time1"] != null) {
+                      currentTimes = [
+                        _parseTime(data["time1"]),
+                        _parseTime(data["time2"]),
+                        _parseTime(data["time3"]),
+                      ];
+                    }
+                  }
+
+                  // ✅ update ภาษา โดยคง mode/time เดิม
                   await updatePreferences(
                     deviceId: deviceId,
                     language: val,
-                    enabled3Times: true,
-                    times: [
-                      const TimeOfDay(hour: 7, minute: 0),
-                      const TimeOfDay(hour: 12, minute: 30),
-                      const TimeOfDay(hour: 20, minute: 30),
-                    ],
+                    enabled3Times: currentEnabled,
+                    times: currentEnabled ? currentTimes : null,
                   );
                 }
               },
@@ -211,11 +240,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
     }
   }
 
-  TimeOfDay _parseTime(String t) {
-    final parts = t.split(":");
-    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-  }
-
   @override
   void initState() {
     super.initState();
@@ -232,7 +256,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
           height: 300,
           child: Column(
             children: [
-              // ปุ่ม Save / Cancel
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -305,7 +328,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Toggle
             SwitchListTile(
               title: Text(text["timesDay"]!),
               subtitle: Text(
@@ -313,6 +335,8 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
                 style: TextStyle(color: Colors.grey.shade600),
               ),
               value: _enabled,
+              activeColor: Colors.blue, // ✅ วงกลม toggle สีฟ้า
+              activeTrackColor: Colors.blue[200], // ✅ พื้น toggle ฟ้าอ่อน
               onChanged: (val) async {
                 setState(() {
                   _enabled = val;

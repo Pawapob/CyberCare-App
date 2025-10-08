@@ -85,23 +85,47 @@ class _MyAppsPageState extends State<MyAppsPage> {
     loadAppsFromCache();
   }
 
+  // ✅ โหลดข้อมูลแอปจาก SharedPreferences + ดึงสถานะจริงจาก DB
   Future<void> loadAppsFromCache() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedData = prefs.getString("recent_apps");
-    if (cachedData != null) {
-      final List decoded = jsonDecode(cachedData);
+    final deviceId = prefs.getString("device_id");
+
+    if (cachedData == null || deviceId == null) return;
+
+    final List decoded = jsonDecode(cachedData);
+    final url =
+    Uri.parse("http://10.0.2.2:5000/get_alert_status?device_id=$deviceId");
+
+    try {
+      final res = await http.get(url);
+      Map<String, String> statusMap = {};
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        for (var d in data) {
+          statusMap[d["package_name"]] = d["alert_status"];
+        }
+      }
+
       setState(() {
         apps = decoded.map<AppItem>((a) {
+          final pkg = a["package_name"] ?? "";
           final installedTime = a["installed_time"] ?? 0;
+          final status = statusMap[pkg] == "off"
+              ? AlertStatus.off
+              : AlertStatus.on;
+
           return AppItem(
-            id: a["package_name"] ?? "",
+            id: pkg,
             name: a["app_name"] ?? "",
             installedAt: DateTime.fromMillisecondsSinceEpoch(installedTime),
-            alertStatus: AlertStatus.on,
+            alertStatus: status,
             icon: a["icon"],
           );
         }).toList();
       });
+    } catch (e) {
+      print("Error loading apps: $e");
     }
   }
 
@@ -120,12 +144,9 @@ class _MyAppsPageState extends State<MyAppsPage> {
 
     if (searchQuery.isNotEmpty) {
       filtered = filtered
-          .where((a) =>
-      a.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          a.id.toLowerCase().contains(searchQuery.toLowerCase()))
+          .where((a) => a.name.toLowerCase().contains(searchQuery.toLowerCase()))
           .toList();
     }
-
     return filtered;
   }
 
@@ -143,11 +164,8 @@ class _MyAppsPageState extends State<MyAppsPage> {
     });
 
     try {
-      final res = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: body,
-      );
+      final res = await http.post(url,
+          headers: {"Content-Type": "application/json"}, body: body);
       print("Update status response: ${res.body}");
     } catch (e) {
       print("Error updating alert status: $e");
@@ -166,7 +184,6 @@ class _MyAppsPageState extends State<MyAppsPage> {
     await updateAlertStatus(app.id, newStatus == AlertStatus.on ? "on" : "off");
   }
 
-  // ✅ Multi toggle สำหรับ “Open All” / “Close All”
   Future<void> toggleAll(bool turnOn) async {
     final items = byTab();
     for (final app in items) {
@@ -179,7 +196,6 @@ class _MyAppsPageState extends State<MyAppsPage> {
     }
   }
 
-  // 🔹 Helper: คำแปลข้อความ "Installed ... days ago"
   String installedText(int daysAgo, Map<String, String> text) {
     if (daysAgo == 0) return text["installedToday"]!;
     if (daysAgo == 1) return text["installedYesterday"]!;
@@ -191,25 +207,20 @@ class _MyAppsPageState extends State<MyAppsPage> {
     final lang = Provider.of<LanguageProvider>(context).lang;
     final text = myAppsStrings[lang]!;
     final items = byTab();
-
     final showBulkButtons =
         _tab == _MyAppsTab.alertOn || _tab == _MyAppsTab.alertOff;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          text["title"]!,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        title: Text(text["title"]!,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
       body: Column(
         children: [
           const SizedBox(height: 8),
-
-          // 🔍 Search Box
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: TextField(
@@ -221,13 +232,10 @@ class _MyAppsPageState extends State<MyAppsPage> {
                 contentPadding:
                 const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none),
               ),
-              onChanged: (val) {
-                setState(() => searchQuery = val);
-              },
+              onChanged: (val) => setState(() => searchQuery = val),
             ),
           ),
 
@@ -238,35 +246,29 @@ class _MyAppsPageState extends State<MyAppsPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _FilterChip(
-                  label: text["all"]!,
-                  selected: _tab == _MyAppsTab.all,
-                  onTap: () => setState(() => _tab = _MyAppsTab.all),
-                ),
+                    label: text["all"]!,
+                    selected: _tab == _MyAppsTab.all,
+                    onTap: () => setState(() => _tab = _MyAppsTab.all)),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: text["alertsOn"]!,
-                  selected: _tab == _MyAppsTab.alertOn,
-                  onTap: () => setState(() => _tab = _MyAppsTab.alertOn),
-                ),
+                    label: text["alertsOn"]!,
+                    selected: _tab == _MyAppsTab.alertOn,
+                    onTap: () => setState(() => _tab = _MyAppsTab.alertOn)),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: text["alertsOff"]!,
-                  selected: _tab == _MyAppsTab.alertOff,
-                  onTap: () => setState(() => _tab = _MyAppsTab.alertOff),
-                ),
+                    label: text["alertsOff"]!,
+                    selected: _tab == _MyAppsTab.alertOff,
+                    onTap: () => setState(() => _tab = _MyAppsTab.alertOff)),
               ],
             ),
           ),
 
-          // Apps List
           Expanded(
             child: apps.isEmpty
                 ? Center(
-              child: Text(
-                text["noApps"]!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black54),
-              ),
+              child: Text(text["noApps"]!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black54)),
             )
                 : ListView.separated(
               itemCount: items.length,
@@ -276,22 +278,17 @@ class _MyAppsPageState extends State<MyAppsPage> {
                 final app = items[i];
                 final daysAgo =
                     DateTime.now().difference(app.installedAt).inDays;
-
                 return ListTile(
                   leading: (app.icon != null)
                       ? Image.memory(base64Decode(app.icon!),
                       width: 40, height: 40)
                       : const Icon(Icons.android, color: Colors.green),
-                  title: Text(
-                    app.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w500, fontSize: 15),
-                  ),
-                  subtitle: Text(
-                    installedText(daysAgo, text),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.black45),
-                  ),
+                  title: Text(app.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500, fontSize: 15)),
+                  subtitle: Text(installedText(daysAgo, text),
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.black45)),
                   trailing: Switch(
                     value: app.alertStatus == AlertStatus.on,
                     onChanged: (_) => toggle(app),
@@ -318,33 +315,26 @@ class _MyAppsPageState extends State<MyAppsPage> {
                         child: OutlinedButton(
                           onPressed: () => toggleAll(false),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.blue,
-                            side: const BorderSide(color: Colors.blue),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            padding:
-                            const EdgeInsets.symmetric(vertical: 14),
-                          ),
+                              foregroundColor: Colors.blue,
+                              side: const BorderSide(color: Colors.blue),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              padding:
+                              const EdgeInsets.symmetric(vertical: 14)),
                           child: Text(text["closeAll"]!),
                         ),
                       ),
-                    if (_tab == _MyAppsTab.alertOn &&
-                        _tab == _MyAppsTab.alertOff)
-                      const SizedBox(width: 12),
                     if (_tab == _MyAppsTab.alertOff)
                       Expanded(
                         child: FilledButton(
                           onPressed: () => toggleAll(true),
                           style: FilledButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            padding:
-                            const EdgeInsets.symmetric(vertical: 14),
-                          ),
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              padding:
+                              const EdgeInsets.symmetric(vertical: 14)),
                           child: Text(text["openAll"]!),
                         ),
                       ),
@@ -363,11 +353,8 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -376,9 +363,8 @@ class _FilterChip extends StatelessWidget {
       selected: selected,
       onSelected: (_) => onTap(),
       labelStyle: TextStyle(
-        color: Colors.black87,
-        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-      ),
+          color: Colors.black87,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500),
       backgroundColor: Colors.grey.shade200,
       selectedColor: Colors.blue.shade100,
       side: BorderSide(color: selected ? Colors.blue : Colors.black12),

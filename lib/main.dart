@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'language_provider.dart'; // ที่มึงเขียนไว้
+import 'language_provider.dart';
 import 'pages/notifications_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/myapps_page.dart';
 import 'pages/settings_page.dart';
 
+// ===================== Localized Strings =====================
+Map<String, Map<String, String>> navStrings = {
+  "en": {
+    "notifications": "Notifications",
+    "scan": "Scan",
+    "myApps": "My apps",
+    "settings": "Setting",
+  },
+  "th": {
+    "notifications": "การแจ้งเตือน",
+    "scan": "สแกน",
+    "myApps": "แอปของฉัน",
+    "settings": "การตั้งค่า",
+  }
+};
+
+// ===================== MAIN APP =====================
 void main() {
   runApp(
     ChangeNotifierProvider(
@@ -35,6 +52,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ===================== HOME PAGE =====================
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -53,6 +71,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ ดึงค่าภาษาออกมาจาก Provider
+    final lang = Provider.of<LanguageProvider>(context).lang;
+    final text = navStrings[lang]!;
+
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
@@ -70,22 +92,22 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.black54,
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.notifications),
-            label: 'Notifications',
+            icon: const Icon(Icons.notifications),
+            label: text["notifications"],
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            label: 'Scan',
+            icon: const Icon(Icons.add_circle_outline),
+            label: text["scan"],
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: 'My apps',
+            icon: const Icon(Icons.list),
+            label: text["myApps"],
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Alter setting',
+            icon: const Icon(Icons.settings),
+            label: text["settings"],
           ),
         ],
       ),

@@ -84,10 +84,15 @@ class _ScanPageState extends State<ScanPage>
   Future<String> getOrCreateDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     String? id = prefs.getString("device_id");
-    if (id == null) {
+
+    if (id == null || id.isEmpty) {
       id = const Uuid().v4();
       await prefs.setString("device_id", id);
+      debugPrint("🆕 New device_id created: $id");
+    } else {
+      debugPrint("✅ Using existing device_id: $id");
     }
+
     return id;
   }
 
@@ -96,30 +101,36 @@ class _ScanPageState extends State<ScanPage>
     final registerUrl = Uri.parse("http://10.0.2.2:5000/register_device");
     final uploadUrl = Uri.parse("http://10.0.2.2:5000/upload_apps");
 
-    await http.post(
-      registerUrl,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"device_id": deviceId}),
-    );
+    try {
+      // register_device (ถ้ามีอยู่แล้วไม่ error)
+      await http.post(
+        registerUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"device_id": deviceId}),
+      );
 
-    final body = {
-      "device_id": deviceId,
-      "apps": apps.map((a) {
-        return {
-          "app_name": a.appName,
-          "package_name": a.packageName,
-          "installed_time": a.installTimeMillis,
-        };
-      }).toList()
-    };
+      // upload_apps
+      final body = {
+        "device_id": deviceId,
+        "apps": apps.map((a) {
+          return {
+            "app_name": a.appName,
+            "package_name": a.packageName,
+            "installed_time": a.installTimeMillis,
+          };
+        }).toList()
+      };
 
-    final res = await http.post(
-      uploadUrl,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(body),
-    );
+      final res = await http.post(
+        uploadUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
 
-    print("Backend response: ${res.body}");
+      debugPrint("📡 Backend response: ${res.body}");
+    } catch (e) {
+      debugPrint("❌ Backend upload error: $e");
+    }
   }
 
   // ------------------ Cache ------------------
@@ -262,7 +273,6 @@ class _ScanPageState extends State<ScanPage>
 
           const SizedBox(height: 30),
 
-          // Scan Button / Progress / Success
           Center(
             child: isScanning
                 ? _buildProgress(text)
@@ -294,8 +304,8 @@ class _ScanPageState extends State<ScanPage>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    AllAppsPage(apps: installedApps, lang: lang),
+                                builder: (context) => AllAppsPage(
+                                    apps: installedApps, lang: lang),
                               ),
                             );
                           }
@@ -308,13 +318,11 @@ class _ScanPageState extends State<ScanPage>
                     ],
                   ),
                 ),
-
                 Expanded(
                   child: hasScannedOnce
                       ? ListView.builder(
-                    itemCount: installedApps.length < 3
-                        ? installedApps.length
-                        : 3,
+                    itemCount:
+                    installedApps.length < 3 ? installedApps.length : 3,
                     itemBuilder: (context, index) {
                       final app = installedApps[index];
                       String appName;
@@ -333,18 +341,13 @@ class _ScanPageState extends State<ScanPage>
                         }
                       }
 
-                      final installedDate =
-                      DateTime.fromMillisecondsSinceEpoch(installTime);
-                      final daysAgo = DateTime.now()
-                          .difference(installedDate)
-                          .inDays;
+                      final installedDate = DateTime.fromMillisecondsSinceEpoch(installTime);
+                      final daysAgo = DateTime.now().difference(installedDate).inDays;
 
                       return ListTile(
                         leading: iconBytes != null
-                            ? Image.memory(iconBytes,
-                            width: 40, height: 40)
-                            : const Icon(Icons.android,
-                            color: Colors.green),
+                            ? Image.memory(iconBytes, width: 40, height: 40)
+                            : const Icon(Icons.android, color: Colors.green),
                         title: Text(appName),
                         subtitle: Text(installedText(daysAgo, text)),
                       );
@@ -510,8 +513,7 @@ class AllAppsPage extends StatelessWidget {
             }
           }
 
-          final installedDate =
-          DateTime.fromMillisecondsSinceEpoch(installTime);
+          final installedDate = DateTime.fromMillisecondsSinceEpoch(installTime);
           final daysAgo = DateTime.now().difference(installedDate).inDays;
 
           return ListTile(
