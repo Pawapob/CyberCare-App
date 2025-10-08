@@ -63,27 +63,45 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 1; // default หน้า Scan
 
+  late List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      const NotificationsPage(),
+      // ✅ หน้า Scan ใส่ isActive ให้ถูกต้อง
+      ScanPage(isActive: _selectedIndex == 1),
+      const MyAppsPage(),
+      const SettingsPage(),
+    ];
+  }
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+
+      // ✅ ถ้าไปหน้า Scan ให้รีเซตใหม่ทุกครั้ง (กลับเป็นปุ่มใหญ่ๆ)
+      if (index == 1) {
+        _pages[1] = ScanPage(key: UniqueKey(), isActive: true);
+      }
+
+      // ✅ ถ้าไปหน้า MyApps ให้รีโหลดข้อมูลใหม่ทุกครั้งหลังสแกน
+      if (index == 2) {
+        _pages[2] = MyAppsPage(key: UniqueKey());
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ ดึงค่าภาษาออกมาจาก Provider
     final lang = Provider.of<LanguageProvider>(context).lang;
     final text = navStrings[lang]!;
 
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: [
-          const NotificationsPage(),
-          ScanPage(isActive: _selectedIndex == 1),
-          const MyAppsPage(),
-          const SettingsPage(),
-        ],
+        children: _pages,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,

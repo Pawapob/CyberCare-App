@@ -74,7 +74,7 @@ class MyAppsPage extends StatefulWidget {
   State<MyAppsPage> createState() => _MyAppsPageState();
 }
 
-class _MyAppsPageState extends State<MyAppsPage> {
+class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
   List<AppItem> apps = [];
   _MyAppsTab _tab = _MyAppsTab.all;
   String searchQuery = "";
@@ -82,7 +82,22 @@ class _MyAppsPageState extends State<MyAppsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // ✅ เริ่มสังเกต lifecycle
     loadAppsFromCache();
+  }
+
+  // ✅ โหลดใหม่เมื่อผู้ใช้กลับมาหน้านี้
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      loadAppsFromCache();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // ✅ ยกเลิก observer
+    super.dispose();
   }
 
   // ✅ โหลดข้อมูลแอปจาก SharedPreferences + ดึงสถานะจริงจาก DB
@@ -111,9 +126,8 @@ class _MyAppsPageState extends State<MyAppsPage> {
         apps = decoded.map<AppItem>((a) {
           final pkg = a["package_name"] ?? "";
           final installedTime = a["installed_time"] ?? 0;
-          final status = statusMap[pkg] == "off"
-              ? AlertStatus.off
-              : AlertStatus.on;
+          final status =
+          statusMap[pkg] == "off" ? AlertStatus.off : AlertStatus.on;
 
           return AppItem(
             id: pkg,
@@ -144,7 +158,8 @@ class _MyAppsPageState extends State<MyAppsPage> {
 
     if (searchQuery.isNotEmpty) {
       filtered = filtered
-          .where((a) => a.name.toLowerCase().contains(searchQuery.toLowerCase()))
+          .where((a) =>
+          a.name.toLowerCase().contains(searchQuery.toLowerCase()))
           .toList();
     }
     return filtered;
