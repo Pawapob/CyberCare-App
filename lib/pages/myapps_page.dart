@@ -1,16 +1,18 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:async'; // เพิ่ม import นี้เผื่อใช้ Timer/Future
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+// 🔥 1. Import Tutorial Package
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../language_provider.dart';
 
 // ===================== Localized Strings =====================
 Map<String, Map<String, String>> myAppsStrings = {
   "en": {
     "title": "My Applications",
-    "searchHint": "Hinted search text",
+    "searchHint": "Type to search apps",
     "all": "All",
     "alertsOn": "Alerts On",
     "alertsOff": "Alerts Off",
@@ -20,6 +22,12 @@ Map<String, Map<String, String>> myAppsStrings = {
     "installedDaysAgo": "Installed {days} days ago",
     "installedToday": "Installed today",
     "installedYesterday": "Installed yesterday",
+    // 🔥 ข้อความสอน (English)
+    "tutorialSearchTitle": "Search Apps",
+    "tutorialSearchDesc": "Type here to quickly find specific applications in your list.",
+    "tutorialSwitchTitle": "Control Alerts",
+    "tutorialSwitchDesc": "Toggle this switch to Enable or Disable security notifications for this specific app.",
+    "tutorialSkip": "SKIP",
   },
   "th": {
     "title": "แอปของฉัน",
@@ -33,6 +41,12 @@ Map<String, Map<String, String>> myAppsStrings = {
     "installedDaysAgo": "ติดตั้งเมื่อ {days} วันที่แล้ว",
     "installedToday": "ติดตั้งวันนี้",
     "installedYesterday": "ติดตั้งเมื่อวานนี้",
+    // 🔥 ข้อความสอน (ไทย)
+    "tutorialSearchTitle": "ค้นหาแอปพลิเคชัน",
+    "tutorialSearchDesc": "พิมพ์ชื่อแอปตรงนี้เพื่อค้นหาแอปที่คุณต้องการอย่างรวดเร็ว",
+    "tutorialSwitchTitle": "จัดการการแจ้งเตือน",
+    "tutorialSwitchDesc": "กดที่สวิตช์นี้เพื่อ เปิด หรือ ปิด การแจ้งเตือนความปลอดภัยสำหรับแอปนี้",
+    "tutorialSkip": "ข้าม",
   }
 };
 
@@ -79,14 +93,17 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
   _MyAppsTab _tab = _MyAppsTab.all;
   String searchQuery = "";
 
+  // 🔥 2. สร้าง Key สำหรับ Tutorial
+  final GlobalKey searchBarKey = GlobalKey(); // Key ช่องค้นหา
+  final GlobalKey firstSwitchKey = GlobalKey(); // Key สวิตช์ตัวแรก
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // ✅ เริ่มสังเกต lifecycle
+    WidgetsBinding.instance.addObserver(this);
     loadAppsFromCache();
   }
 
-  // ✅ โหลดใหม่เมื่อผู้ใช้กลับมาหน้านี้
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -96,11 +113,113 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // ✅ ยกเลิก observer
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  // ✅ โหลดข้อมูลแอปจาก SharedPreferences + ดึงสถานะจริงจาก DB
+  // 🔥 3. ฟังก์ชันบันทึกว่าสอนแล้ว
+  void markTutorialAsSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hasSeenMyAppsTutorial', true);
+  }
+
+  // 🔥 4. ฟังก์ชันเช็คและแสดง Tutorial
+  void checkTutorial() async {
+    final prefs = await SharedPreferences.getInstance();
+    bool hasSeen = prefs.getBool('hasSeenMyAppsTutorial') ?? false;
+
+    // ต้องยังไม่เคยดู และ ต้องมีแอปในรายการอย่างน้อย 1 ตัวถึงจะสอน (เพราะต้องชี้ที่สวิตช์)
+    if (!hasSeen && apps.isNotEmpty) {
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) showTutorial();
+      });
+    }
+  }
+
+  void showTutorial() {
+    final lang = Provider.of<LanguageProvider>(context, listen: false).lang;
+    final text = myAppsStrings[lang]!;
+
+    TutorialCoachMark(
+      targets: [
+        // Step 1: สอนช่องค้นหา
+        TargetFocus(
+          identify: "SearchBar",
+          keyTarget: searchBarKey,
+          shape: ShapeLightFocus.RRect,
+          radius: 20,
+          contents: [
+            TargetContent(
+              align: ContentAlign.bottom,
+              builder: (context, controller) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      text["tutorialSearchTitle"]!,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      text["tutorialSearchDesc"]!,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+        // Step 2: สอนปุ่ม Switch (ชี้ไปที่ตัวแรก)
+        TargetFocus(
+          identify: "AlertSwitch",
+          keyTarget: firstSwitchKey,
+          shape: ShapeLightFocus.Circle,
+          alignSkip: Alignment.topLeft,
+          contents: [
+            TargetContent(
+              align: ContentAlign.left, // ข้อความอยู่ทางซ้ายของปุ่ม
+              builder: (context, controller) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      text["tutorialSwitchTitle"]!,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      text["tutorialSwitchDesc"]!,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                      textAlign: TextAlign.right,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ],
+      colorShadow: Colors.black,
+      textSkip: text["tutorialSkip"]!,
+      paddingFocus: 10,
+      opacityShadow: 0.85,
+      onFinish: () => markTutorialAsSeen(),
+      onSkip: () {
+        markTutorialAsSeen();
+        return true;
+      },
+    ).show(context: context);
+  }
+
   Future<void> loadAppsFromCache() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedData = prefs.getString("recent_apps");
@@ -138,6 +257,10 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
           );
         }).toList();
       });
+
+      // 🔥 5. เรียกเช็ค Tutorial หลังจากโหลดข้อมูลเสร็จ
+      checkTutorial();
+
     } catch (e) {
       print("Error loading apps: $e");
     }
@@ -165,7 +288,6 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
     return filtered;
   }
 
-  // ✅ อัปเดตสถานะใน backend
   Future<void> updateAlertStatus(String packageName, String alertStatus) async {
     final prefs = await SharedPreferences.getInstance();
     final deviceId = prefs.getString("device_id");
@@ -239,6 +361,7 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: TextField(
+              key: searchBarKey, // 🔥 6. ฝัง Key ช่องค้นหา
               decoration: InputDecoration(
                 hintText: text["searchHint"]!,
                 prefixIcon: const Icon(Icons.search),
@@ -305,6 +428,8 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
                       style: const TextStyle(
                           fontSize: 12, color: Colors.black45)),
                   trailing: Switch(
+                    // 🔥 7. ฝัง Key ให้สวิตช์ *เฉพาะตัวแรก* (i == 0)
+                    key: i == 0 ? firstSwitchKey : null,
                     value: app.alertStatus == AlertStatus.on,
                     onChanged: (_) => toggle(app),
                     activeColor: Colors.white,
@@ -317,7 +442,7 @@ class _MyAppsPageState extends State<MyAppsPage> with WidgetsBindingObserver {
             ),
           ),
 
-          // ✅ ปุ่ม Open All / Close All
+          // ปุ่ม Open All / Close All
           if (showBulkButtons)
             SafeArea(
               child: Padding(
@@ -378,11 +503,11 @@ class _FilterChip extends StatelessWidget {
       selected: selected,
       onSelected: (_) => onTap(),
       labelStyle: TextStyle(
-          color: Colors.black87,
+          color: selected ? Colors.white : Colors.black87,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w500),
       backgroundColor: Colors.grey.shade200,
-      selectedColor: Colors.blue.shade100,
-      side: BorderSide(color: selected ? Colors.blue : Colors.black12),
+      selectedColor: Colors.blue,
+      side: BorderSide(color: selected ? Colors.blue : Colors.grey),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
   }

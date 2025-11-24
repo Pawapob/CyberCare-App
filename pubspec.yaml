@@ -16,6 +16,7 @@ dependencies:
   http: ^1.2.0
   uuid: ^4.2.1
   cupertino_icons: ^1.0.8
+  tutorial_coach_mark: ^1.2.5  # ตัวทำ popup สอนเล่น
 
 dev_dependencies:
   flutter_test:

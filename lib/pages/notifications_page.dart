@@ -85,7 +85,11 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
+  // 🔧 แก้ IP ตรงนี้ให้ตรงกับเครื่องคอม (ถ้าใช้เครื่องจริง)
+  // Emulator: 10.0.2.2
+  // เครื่องจริง: 192.168.x.x
   final String baseUrl = "http://10.0.2.2:5000";
+
   List<NotiItem> all = [];
   _Tab tab = _Tab.all;
   Map<String, Map<String, dynamic>> cacheApps = {};
@@ -126,25 +130,31 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _fetchNotifications() async {
     final deviceId = await _getDeviceId();
     if (deviceId.isEmpty) return;
-    final url = Uri.parse("$baseUrl/get_notifications?device_id=$deviceId");
-    final res = await http.get(url);
 
-    if (res.statusCode != 200) {
-      setState(() => all = []);
-      return;
+    try {
+      final url = Uri.parse("$baseUrl/get_notifications?device_id=$deviceId");
+      final res = await http.get(url);
+
+      if (res.statusCode != 200) {
+        setState(() => all = []);
+        return;
+      }
+
+      final List data = jsonDecode(res.body);
+      final list = data
+          .map((e) => NotiItem.fromJson(e))
+          .where((n) {
+        // กรองเฉพาะแอปที่มีในเครื่อง (จาก Cache)
+        final byPackage = cacheApps.containsKey(n.packageName);
+        final byAppName = cacheApps.values.any((a) =>
+        (a["app_name"] as String).toLowerCase() == n.appName.toLowerCase());
+        return byPackage || byAppName;
+      }).toList();
+
+      setState(() => all = list);
+    } catch (e) {
+      debugPrint("Error fetching notifications: $e");
     }
-
-    final List data = jsonDecode(res.body);
-    final list = data
-        .map((e) => NotiItem.fromJson(e))
-        .where((n) {
-      final byPackage = cacheApps.containsKey(n.packageName);
-      final byAppName = cacheApps.values.any((a) =>
-      (a["app_name"] as String).toLowerCase() == n.appName.toLowerCase());
-      return byPackage || byAppName;
-    }).toList();
-
-    setState(() => all = list);
   }
 
   List<NotiItem> get filtered {
@@ -159,20 +169,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _markAsRead(NotiItem n) async {
-    final url = Uri.parse("$baseUrl/mark_as_read");
-    await http.post(url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"id": n.id}));
-    setState(() {
-      final idx = all.indexWhere((e) => e.id == n.id);
-      if (idx != -1) all[idx].isRead = true;
-    });
+    try {
+      final url = Uri.parse("$baseUrl/mark_as_read");
+      await http.post(url,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"id": n.id}));
+      setState(() {
+        final idx = all.indexWhere((e) => e.id == n.id);
+        if (idx != -1) all[idx].isRead = true;
+      });
+    } catch (e) {
+      debugPrint("Error marking as read: $e");
+    }
   }
 
   Widget _riskChip(String level) {
     Color bg, fg;
     switch (level.toLowerCase()) {
       case "high":
+      case "critical": // รองรับ Critical ด้วย (เผื่อหลุดมา)
         bg = const Color(0xfffde7e9);
         fg = const Color(0xffd32f2f);
         break;
@@ -192,11 +207,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
-  // ✅ Popup รายละเอียด
+  // ✅ ฟังก์ชันแสดง Popup (แก้ไขแล้ว)
   void _showNotificationDetail(BuildContext context, NotiItem n, String? base64Icon, Map<String, String> text) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
+      // 🔴 เปลี่ยน _ เป็น dialogContext เพื่อเอาไปใช้กับ Navigator.pop
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Padding(
@@ -259,8 +275,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(text["close"]!),
+                    // 🔴 ใช้ dialogContext แทน context เดิม (แก้ปัญหาปิดไม่ได้)
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text(
+                      text["close"]!,
+                      style: const TextStyle(
+                          color: Colors.blue, // 🔵 เปลี่ยนเป็นสีฟ้าตามสั่ง
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16
+                      ),
+                    ),
                   ),
                 )
               ],
@@ -281,6 +305,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         title: Text(text["title"]!),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
+        elevation: 0, // เอาเงาออกให้คลีนๆ
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -294,6 +319,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         child: Column(
           children: [
             const SizedBox(height: 12),
+            // แถบ Filter (ทั้งหมด / อ่านแล้ว / ยังไม่อ่าน)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -317,21 +343,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ],
             ),
             const SizedBox(height: 8),
+
+            // รายการแจ้งเตือน
             Expanded(
               child: filtered.isEmpty
-                  ? Center(child: Text(text["none"]!))
+                  ? Center(child: Text(text["none"]!, style: const TextStyle(color: Colors.grey)))
                   : ListView.separated(
                 itemCount: filtered.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 itemBuilder: (context, i) {
                   final n = filtered[i];
+                  // หาไอคอนแอปจาก Cache
                   Map<String, dynamic>? appInfo = cacheApps[n.packageName];
                   if (appInfo == null) {
                     appInfo = cacheApps.values.firstWhere(
-                          (a) =>
-                      (a["app_name"] as String).toLowerCase() ==
-                          n.appName.toLowerCase(),
+                          (a) => (a["app_name"] as String).toLowerCase() == n.appName.toLowerCase(),
                       orElse: () => {},
                     );
                   }
@@ -343,8 +370,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
                   return InkWell(
                     onTap: () async {
+                      // 1. กดปุ๊บ สั่งให้เป็น "อ่านแล้ว"
                       await _markAsRead(n);
-                      _showNotificationDetail(context, n, base64Icon, text);
+                      // 2. เปิด Popup รายละเอียด
+                      if (mounted) {
+                        _showNotificationDetail(context, n, base64Icon, text);
+                      }
                     },
                     child: Container(
                       decoration: BoxDecoration(
@@ -362,6 +393,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // รูปไอคอน + จุดสีฟ้า (ถ้ายังไม่อ่าน)
                           Stack(
                             alignment: Alignment.bottomRight,
                             children: [
@@ -389,6 +421,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             ],
                           ),
                           const SizedBox(width: 12),
+                          // เนื้อหาข้อความ
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,7 +438,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(n.message,
+                                    maxLines: 2, // จำกัด 2 บรรทัดให้ดูสะอาด
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(color: Colors.black87)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "${n.timestamp.day}/${n.timestamp.month}/${n.timestamp.year} ${n.timestamp.hour}:${n.timestamp.minute.toString().padLeft(2,'0')}",
+                                  style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                                )
                               ],
                             ),
                           ),
@@ -437,13 +477,12 @@ class _FilterChip extends StatelessWidget {
       selected: selected,
       onSelected: (_) => onTap(),
       labelStyle: TextStyle(
-        color: Colors.black87,
+        color: selected ? Colors.white : Colors.black87,
         fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
       ),
       backgroundColor: Colors.grey.shade200,
-      selectedColor: Colors.blue.shade100,
-      side: BorderSide(color: selected ? Colors.blue : Colors.black12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      selectedColor: Colors.blue, // เปลี่ยนสีพื้นหลังตอนเลือกเป็นสีฟ้า
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }
 }
