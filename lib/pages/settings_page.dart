@@ -15,8 +15,15 @@ Map<String, Map<String, String>> localizedStrings = {
     "settingsTitle": "Settings",
     "language": "Language",
     "alerts": "Alerts",
-    "alertsSubtitle": "Notification time preferences",
-    "timeSetting": "Time Setting",
+    "alertsSubtitle": "Notification preferences",
+    "timeSetting": "Notification Settings",
+
+    // 🔥 New Content Settings Strings
+    "contentSection": "Alert Content",
+    "includeAttack": "Include Cyber Attacks",
+    "includeAttackSubtitleOn": "Receiving Vulnerabilities & Cyber Attack News",
+    "includeAttackSubtitleOff": "Receiving Only Vulnerabilities",
+
     "timesDay": "Scheduled Mode",
     "onMode": "ON = Notifications at set times",
     "offMode": "OFF = Real-time mode",
@@ -33,8 +40,10 @@ Map<String, Map<String, String>> localizedStrings = {
     "tutorialLangTitle": "Change Language",
     "tutorialLangDesc": "Tap here to switch between Thai and English.",
     "tutorialAlertTitle": "Notification Settings",
-    "tutorialAlertDesc": "Tap here to configure when you want to receive security alerts.",
+    "tutorialAlertDesc": "Tap here to configure when and what alerts you receive.",
     // 🔥 --- Tutorial TimeSetting Page ---
+    "tutorialAttackTitle": "Cyber Attack News",
+    "tutorialAttackDesc": "Toggle ON to receive general cyber attack news in addition to app vulnerabilities.",
     "tutorialRealtimeTitle": "Real-time vs Scheduled",
     "tutorialRealtimeDesc": "Toggle OFF for immediate alerts. Toggle ON to schedule summaries.",
     "tutorialFreqTitle": "Select Frequency",
@@ -46,7 +55,14 @@ Map<String, Map<String, String>> localizedStrings = {
     "language": "ภาษา",
     "alerts": "การแจ้งเตือน",
     "alertsSubtitle": "การตั้งค่าการแจ้งเตือน",
-    "timeSetting": "การตั้งค่าเวลา",
+    "timeSetting": "ตั้งค่าการแจ้งเตือน",
+
+    // 🔥 เพิ่มข้อความใหม่สำหรับ Content Settings
+    "contentSection": "เนื้อหาการแจ้งเตือน",
+    "includeAttack": "รวมข่าวการโจมตีไซเบอร์",
+    "includeAttackSubtitleOn": "รับแจ้งเตือนทั้งช่องโหว่และข่าวการโจมตี",
+    "includeAttackSubtitleOff": "รับแจ้งเตือนเฉพาะช่องโหว่เท่านั้น",
+
     "timesDay": "โหมดตั้งเวลาแจ้งเตือน",
     "onMode": "เปิด = แจ้งเตือนตามเวลาที่กำหนด",
     "offMode": "ปิด = โหมดเรียลไทม์ (แจ้งทันที)",
@@ -63,8 +79,10 @@ Map<String, Map<String, String>> localizedStrings = {
     "tutorialLangTitle": "เปลี่ยนภาษา",
     "tutorialLangDesc": "กดตรงนี้เพื่อเปลี่ยนภาษาของแอปพลิเคชัน (ไทย/English)",
     "tutorialAlertTitle": "ตั้งค่าการแจ้งเตือน",
-    "tutorialAlertDesc": "กดตรงนี้เพื่อเข้าไปกำหนดเวลาในการรับการแจ้งเตือนความปลอดภัย",
+    "tutorialAlertDesc": "กดตรงนี้เพื่อเข้าไปกำหนดเวลาและประเภทการรับแจ้งเตือนความปลอดภัย",
     // 🔥 --- Tutorial TimeSetting Page ---
+    "tutorialAttackTitle": "ข่าวการโจมตีไซเบอร์",
+    "tutorialAttackDesc": "เปิดสวิตช์นี้หากต้องการรับข่าวสารเกี่ยวกับภัยคุกคามไซเบอร์ทั่วไป เพิ่มเติมจากการแจ้งเตือนช่องโหว่ของแอป",
     "tutorialRealtimeTitle": "โหมดเรียลไทม์",
     "tutorialRealtimeDesc": "ปิดสวิตช์: แจ้งเตือนทันทีเมื่อมีภัยคุกคาม (Real-time)\nเปิดสวิตช์: แจ้งเตือนตามเวลาที่กำหนด",
     "tutorialFreqTitle": "เลือกความถี่",
@@ -84,18 +102,22 @@ Future<String> getOrCreateDeviceId() async {
   return id;
 }
 
+// 🔥 Updated: Added includeCyberAttack parameter
 Future<void> updatePreferences({
   required String deviceId,
   required String language,
   required bool enabled3Times,
+  required bool includeCyberAttack,
   List<TimeOfDay>? times,
 }) async {
+  // หากใช้ Emulator Android ให้ใช้ 10.0.2.2 หากเครื่องจริงให้ใช้ IP เครื่องคอม
   final url = Uri.parse("http://10.0.2.2:5000/update_preferences");
 
   final body = {
     "device_id": deviceId,
     "language": language,
     "mode": enabled3Times ? "3-times" : "realtime",
+    "include_cyber_attack": includeCyberAttack,
     "time1": null,
     "time2": null,
     "time3": null,
@@ -272,7 +294,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   await updatePreferences(
                     deviceId: deviceId,
                     language: val,
-                    enabled3Times: true, // Dummy value, updated properly in TimeSettingPage
+                    enabled3Times: true,
+                    includeCyberAttack: false,
                     times: null,
                   );
                 }
@@ -301,7 +324,7 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 // ===================================================
-// 🔥 Time Setting Page (With Tutorial)
+// 🔥 Time Setting Page (Updated with Tutorial for Content Switch)
 // ===================================================
 class TimeSettingPage extends StatefulWidget {
   final String lang;
@@ -312,6 +335,7 @@ class TimeSettingPage extends StatefulWidget {
 }
 
 class _TimeSettingPageState extends State<TimeSettingPage> {
+  // Existing States
   bool _enabled = true;
   int _frequency = 3;
   List<TimeOfDay> _times = [
@@ -320,7 +344,11 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
     const TimeOfDay(hour: 20, minute: 30),
   ];
 
+  // 🔥 New State for "Include Cyber Attacks"
+  bool _includeCyberAttack = false;
+
   // 🔥 Keys for Tutorial
+  final GlobalKey attackSwitchKey = GlobalKey(); // ✅ Key for new switch
   final GlobalKey timeSwitchKey = GlobalKey();
   final GlobalKey frequencyKey = GlobalKey();
 
@@ -334,7 +362,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
   // --- Tutorial Logic ---
   void checkTutorial() async {
     final prefs = await SharedPreferences.getInstance();
-    // ใช้คนละ Key กับหน้าหลัก
     bool hasSeen = prefs.getBool('hasSeenTimeSettingTutorial') ?? false;
 
     if (!hasSeen) {
@@ -349,7 +376,35 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
 
     List<TargetFocus> targets = [];
 
-    // 1. สอนสวิตช์เปิด/ปิด (Real-time)
+    // 🔥 1. สอนปุ่มเลือกข่าว Cyber Attack (เพิ่มใหม่)
+    targets.add(
+      TargetFocus(
+        identify: "AttackSwitch",
+        keyTarget: attackSwitchKey,
+        shape: ShapeLightFocus.RRect,
+        radius: 5,
+        contents: [
+          TargetContent(
+            align: ContentAlign.bottom,
+            builder: (context, controller) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(text["tutorialAttackTitle"]!,
+                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Text(text["tutorialAttackDesc"]!,
+                      style: const TextStyle(color: Colors.white, fontSize: 16)),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+
+    // 2. สอนสวิตช์เปิด/ปิด (Real-time)
     targets.add(
       TargetFocus(
         identify: "TimeSwitch",
@@ -377,7 +432,7 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
       ),
     );
 
-    // 2. สอนเลือกความถี่ (ถ้าเปิดอยู่)
+    // 3. สอนเลือกความถี่ (ถ้าเปิดอยู่)
     if (_enabled) {
       targets.add(
         TargetFocus(
@@ -437,6 +492,13 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
         final data = jsonDecode(res.body);
         setState(() {
           _enabled = (data["mode"] == "3-times");
+
+          if (data["include_cyber_attack"] != null) {
+            _includeCyberAttack = data["include_cyber_attack"];
+          } else {
+            _includeCyberAttack = false;
+          }
+
           List<TimeOfDay> loadedTimes = [];
           if (data["time1"] != null) loadedTimes.add(_parseTime(data["time1"]));
           if (data["time2"] != null) loadedTimes.add(_parseTime(data["time2"]));
@@ -464,6 +526,7 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
       deviceId: deviceId,
       language: widget.lang,
       enabled3Times: _enabled,
+      includeCyberAttack: _includeCyberAttack,
       times: activeTimes,
     );
   }
@@ -528,9 +591,30 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
           children: [
+
+            // 🔥 NEW SECTION: Content Preference
+            Text(text["contentSection"]!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
+            SwitchListTile(
+              key: attackSwitchKey, // ✅ ใส่ Key ตรงนี้เพื่อให้ Tutorial ชี้ถูก
+              title: Text(text["includeAttack"]!, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(
+                _includeCyberAttack ? text["includeAttackSubtitleOn"]! : text["includeAttackSubtitleOff"]!,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
+              value: _includeCyberAttack,
+              activeColor: Colors.orange,
+              onChanged: (val) async {
+                setState(() => _includeCyberAttack = val);
+                await _saveConfig();
+              },
+            ),
+            const Divider(),
+            const SizedBox(height: 10),
+
+            // --- Existing Time Settings ---
             SwitchListTile(
               key: timeSwitchKey,
               title: Text(text["timesDay"]!, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -595,7 +679,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
                           elevation: 1,
                           side: const BorderSide(color: Colors.blueAccent),
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          // 🔥 เปลี่ยนตรงนี้ครับ เป็นมุมโค้ง 30
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                         ),
                         child: Text(

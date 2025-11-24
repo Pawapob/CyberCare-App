@@ -45,7 +45,7 @@ Map<String, Map<String, String>> myAppsStrings = {
     "tutorialSearchTitle": "ค้นหาแอปพลิเคชัน",
     "tutorialSearchDesc": "พิมพ์ชื่อแอปตรงนี้เพื่อค้นหาแอปที่คุณต้องการอย่างรวดเร็ว",
     "tutorialSwitchTitle": "จัดการการแจ้งเตือน",
-    "tutorialSwitchDesc": "กดที่สวิตช์นี้เพื่อ เปิด หรือ ปิด การแจ้งเตือนความปลอดภัยสำหรับแอปนี้",
+    "tutorialSwitchDesc": "กดที่สวิตช์นี้เพื่อ เปิด หรือ ปิด การแจ้งเตือนสำหรับแอปนี้",
     "tutorialSkip": "ข้าม",
   }
 };

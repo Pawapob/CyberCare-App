@@ -48,7 +48,8 @@ Map<String, Map<String, String>> scanStrings = {
     "installedDaysAgo": "ติดตั้ง {days} วันที่แล้ว",
     // --- Tutorial Step 1: Start ---
     "tutorialTitle": "เริ่มสแกนตรงนี้",
-    "tutorialDesc": "กดปุ่มเพื่อสแกนหาแอปในเครื่อง (ไม่ใช่สแกนไวรัส)",
+    "tutorialDesc": "กดปุ่มเพื่อสแกนหาแอปในเครื่อง "
+        "(ไม่ใช่สแกนไวรัส)",
     // --- Tutorial Step 2: After Scan ---
     "tutorialViewAllTitle": "ดูแอปทั้งหมด",
     "tutorialViewAllDesc": "กดตรงนี้เพื่อดูรายชื่อแอปทั้งหมดในเครื่อง",

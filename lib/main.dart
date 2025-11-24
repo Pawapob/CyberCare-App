@@ -5,7 +5,7 @@ import 'language_provider.dart';
 import 'pages/notifications_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/myapps_page.dart';
-import 'pages/settings_page.dart';
+import 'pages/settings_page.dart'; // ✅ จำเป็นต้อง import เพื่อใช้ updatePreferences
 
 // ===================== Localized Strings =====================
 Map<String, Map<String, String>> navStrings = {
@@ -62,33 +62,40 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 1; // default หน้า Scan
+  int _selectedIndex = 1; // default (เดี๋ยวจะถูกเปลี่ยนใน initState)
   late List<Widget> _pages;
 
-  // 🔥 ตัวแปรเช็คว่าเลือกภาษาเสร็จหรือยัง (ถ้ายัง ห้ามโหลดหน้าแอป)
+  // 🔥 ตัวแปรเช็คความพร้อม
   bool _isReady = false;
 
   @override
   void initState() {
     super.initState();
-    // เช็คภาษาเป็นอย่างแรกก่อนทำอย่างอื่น
-    _checkFirstTimeLanguage();
+    // เช็คสถานะการใช้งาน (ครั้งแรก หรือ ครั้งต่อมา)
+    _checkAppLaunchStatus();
   }
 
   // ---------------------------------------------------------
-  // 🔥 Logic เช็คและบังคับเลือกภาษา (First Time Language)
+  // 🔥 Logic เช็คสถานะการเข้าแอป
   // ---------------------------------------------------------
-  Future<void> _checkFirstTimeLanguage() async {
+  Future<void> _checkAppLaunchStatus() async {
     final prefs = await SharedPreferences.getInstance();
     bool hasSelectedLang = prefs.getBool('hasSelectedLanguage') ?? false;
 
     if (!hasSelectedLang) {
-      // ถ้ายังไม่เคยเลือก -> รอแป๊บนึงให้ context พร้อม แล้วเด้ง Popup
+      // 🟢 กรณีเข้าครั้งแรก (ยังไม่เคยเลือกภาษา)
+      // ให้รอเลือกภาษา -> แล้วค่อยไปหน้า Scan (index 1)
+      _selectedIndex = 1;
+
       await Future.delayed(const Duration(milliseconds: 100));
       if (!mounted) return;
       _showLanguageDialog();
+
     } else {
-      // ถ้าเคยเลือกแล้ว -> โหลดหน้าแอปปกติ
+      // 🔵 กรณีเข้าครั้งต่อๆ ไป (เคยเลือกภาษาแล้ว)
+      // ให้ไปหน้า Notifications (index 0) ทันที
+      _selectedIndex = 0;
+
       _initPages();
       setState(() {
         _isReady = true;
@@ -99,9 +106,8 @@ class _HomePageState extends State<HomePage> {
   void _showLanguageDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false, // 🔒 ล็อกห้ามกดปิด ต้องเลือกเท่านั้น
+      barrierDismissible: false,
       builder: (context) {
-        // 🔒 WillPopScope ห้ามกดปุ่ม Back ที่เครื่อง
         return WillPopScope(
           onWillPop: () async => false,
           child: AlertDialog(
@@ -124,7 +130,6 @@ class _HomePageState extends State<HomePage> {
             ),
             actionsAlignment: MainAxisAlignment.center,
             actions: [
-              // ปุ่มภาษาอังกฤษ
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
@@ -135,10 +140,9 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 onPressed: () => _setLanguageAndStart('en'),
-                child: const Text("English 🇺k"),
+                child: const Text("English 🇺🇸"),
               ),
               const SizedBox(width: 10),
-              // ปุ่มภาษาไทย
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
@@ -158,17 +162,32 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _setLanguageAndStart(String langCode) async {
-    // 1. เปลี่ยนภาษาทั้งแอป
+    // 1. เปลี่ยนภาษา
     Provider.of<LanguageProvider>(context, listen: false).setLang(langCode);
 
-    // 2. บันทึกว่าเลือกแล้ว
+    // 2. บันทึกว่าเลือกแล้ว + บันทึกภาษาลงเครื่อง
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSelectedLanguage', true);
+    await prefs.setString('lang', langCode);
 
-    // 3. ปิด Popup
+    // 3. ส่งไป Backend
+    try {
+      final deviceId = await getOrCreateDeviceId();
+      await updatePreferences(
+        deviceId: deviceId,
+        language: langCode,
+        enabled3Times: true,
+        includeCyberAttack: false, // 🔥✅ เพิ่มบรรทัดนี้แล้ว (Error จะหายไป)
+        times: null,
+      );
+    } catch (e) {
+      print("Error saving language to backend: $e");
+    }
+
+    // 4. ปิด Popup
     if (mounted) Navigator.pop(context);
 
-    // 4. เริ่มโหลดหน้า Scan (ตอนนี้ ScanPage จะเริ่มทำงาน และ Popup สอนจะเด้งตามมา)
+    // 5. เริ่มโหลดหน้า Scan (เพราะเป็นครั้งแรก)
     _initPages();
     setState(() {
       _isReady = true;
@@ -190,15 +209,12 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
 
-      // รีเซตหน้า Scan เมื่อกดเข้ามาใหม่
       if (index == 1) {
         _pages[1] = ScanPage(key: UniqueKey(), isActive: true);
       }
-      // รีเซตหน้า MyApps เมื่อกดเข้ามาใหม่
       if (index == 2) {
         _pages[2] = MyAppsPage(key: UniqueKey());
       }
-      // รีเซตหน้า Settings เมื่อกดเข้ามาใหม่
       if (index == 3) {
         _pages[3] = const SettingsPage();
       }
@@ -207,7 +223,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 🔥 ถ้ายังเลือกภาษาไม่เสร็จ ให้โชว์หน้า Loading รอไปก่อน
     if (!_isReady) {
       return const Scaffold(
         body: Center(
@@ -216,15 +231,13 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    // ใช้ Consumer เพื่อให้หน้า Home อัปเดตภาษาทันทีที่เลือกใน Popup
     return Consumer<LanguageProvider>(
       builder: (context, languageProvider, child) {
         final lang = languageProvider.lang;
         final text = navStrings[lang]!;
 
         return Scaffold(
-          // แก้ตรงนี้: เปลี่ยนจาก IndexedStack เป็นการเรียกหน้าโดยตรง
-          body: _pages[_selectedIndex],
+          body: _pages[_selectedIndex], // แสดงหน้าตาม index ที่กำหนดไว้ตอนแรก
 
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _selectedIndex,
