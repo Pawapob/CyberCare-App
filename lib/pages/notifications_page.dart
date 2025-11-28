@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../language_provider.dart';
+import '../config.dart'; // 🔥 1. Import Config
 
 // ================== Localized Strings ==================
 Map<String, Map<String, String>> notificationStrings = {
@@ -85,10 +86,8 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  // 🔧 แก้ IP ตรงนี้ให้ตรงกับเครื่องคอม (ถ้าใช้เครื่องจริง)
-  // Emulator: 10.0.2.2
-  // เครื่องจริง: 192.168.x.x
-  final String baseUrl = "http://10.0.2.2:5000";
+  // 🔥 2. ใช้ URL จาก Config
+  final String baseUrl = Config.baseUrl;
 
   List<NotiItem> all = [];
   _Tab tab = _Tab.all;
@@ -133,7 +132,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     try {
       final url = Uri.parse("$baseUrl/get_notifications?device_id=$deviceId");
-      final res = await http.get(url);
+
+      // 🔥 3. เพิ่ม Header ตรงนี้
+      final res = await http.get(
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+      );
 
       if (res.statusCode != 200) {
         setState(() => all = []);
@@ -148,7 +155,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final byPackage = cacheApps.containsKey(n.packageName);
         final byAppName = cacheApps.values.any((a) =>
         (a["app_name"] as String).toLowerCase() == n.appName.toLowerCase());
-        return byPackage || byAppName;
+
+        // --- PATCH: allow "General" through so all users see general alerts ---
+        final isGeneral = n.appName.trim().toLowerCase() == "general";
+        return byPackage || byAppName || isGeneral;
       }).toList();
 
       setState(() => all = list);
@@ -171,9 +181,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _markAsRead(NotiItem n) async {
     try {
       final url = Uri.parse("$baseUrl/mark_as_read");
-      await http.post(url,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({"id": n.id}));
+
+      // 🔥 4. เพิ่ม Header ตรงนี้ด้วย
+      await http.post(
+          url,
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          body: jsonEncode({"id": n.id})
+      );
+
       setState(() {
         final idx = all.indexWhere((e) => e.id == n.id);
         if (idx != -1) all[idx].isRead = true;
@@ -187,7 +205,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     Color bg, fg;
     switch (level.toLowerCase()) {
       case "high":
-      case "critical": // รองรับ Critical ด้วย (เผื่อหลุดมา)
+      case "critical":
         bg = const Color(0xfffde7e9);
         fg = const Color(0xffd32f2f);
         break;
@@ -207,11 +225,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
-  // ✅ ฟังก์ชันแสดง Popup (แก้ไขแล้ว)
   void _showNotificationDetail(BuildContext context, NotiItem n, String? base64Icon, Map<String, String> text) {
     showDialog(
       context: context,
-      // 🔴 เปลี่ยน _ เป็น dialogContext เพื่อเอาไปใช้กับ Navigator.pop
       builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -275,12 +291,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    // 🔴 ใช้ dialogContext แทน context เดิม (แก้ปัญหาปิดไม่ได้)
                     onPressed: () => Navigator.pop(dialogContext),
                     child: Text(
                       text["close"]!,
                       style: const TextStyle(
-                          color: Colors.blue, // 🔵 เปลี่ยนเป็นสีฟ้าตามสั่ง
+                          color: Colors.blue,
                           fontWeight: FontWeight.bold,
                           fontSize: 16
                       ),
@@ -305,7 +320,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         title: Text(text["title"]!),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
-        elevation: 0, // เอาเงาออกให้คลีนๆ
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -319,7 +334,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
         child: Column(
           children: [
             const SizedBox(height: 12),
-            // แถบ Filter (ทั้งหมด / อ่านแล้ว / ยังไม่อ่าน)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -344,7 +358,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
             const SizedBox(height: 8),
 
-            // รายการแจ้งเตือน
             Expanded(
               child: filtered.isEmpty
                   ? Center(child: Text(text["none"]!, style: const TextStyle(color: Colors.grey)))
@@ -354,7 +367,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 itemBuilder: (context, i) {
                   final n = filtered[i];
-                  // หาไอคอนแอปจาก Cache
                   Map<String, dynamic>? appInfo = cacheApps[n.packageName];
                   if (appInfo == null) {
                     appInfo = cacheApps.values.firstWhere(
@@ -370,9 +382,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
                   return InkWell(
                     onTap: () async {
-                      // 1. กดปุ๊บ สั่งให้เป็น "อ่านแล้ว"
                       await _markAsRead(n);
-                      // 2. เปิด Popup รายละเอียด
                       if (mounted) {
                         _showNotificationDetail(context, n, base64Icon, text);
                       }
@@ -393,7 +403,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // รูปไอคอน + จุดสีฟ้า (ถ้ายังไม่อ่าน)
                           Stack(
                             alignment: Alignment.bottomRight,
                             children: [
@@ -421,7 +430,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             ],
                           ),
                           const SizedBox(width: 12),
-                          // เนื้อหาข้อความ
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,7 +446,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(n.message,
-                                    maxLines: 2, // จำกัด 2 บรรทัดให้ดูสะอาด
+                                    maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(color: Colors.black87)),
                                 const SizedBox(height: 4),
@@ -463,7 +471,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 }
 
-// =============== FilterChip widget ===============
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -481,7 +488,7 @@ class _FilterChip extends StatelessWidget {
         fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
       ),
       backgroundColor: Colors.grey.shade200,
-      selectedColor: Colors.blue, // เปลี่ยนสีพื้นหลังตอนเลือกเป็นสีฟ้า
+      selectedColor: Colors.blue,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
   }

@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../language_provider.dart';
+import '../config.dart'; // 🔥 1. Import ไฟล์ Config เข้ามา
 
 // ===================== Localized Strings =====================
 Map<String, Map<String, String>> scanStrings = {
@@ -17,6 +18,7 @@ Map<String, Map<String, String>> scanStrings = {
     "scanSubtitle": "App list scan only — no files or personal data are checked",
     "scanButton": "SCAN",
     "scanning": "Scanning...",
+    "preparing": "Preparing...",
     "checkingApps": "Checking apps",
     "success": "Scan completed",
     "recentlyInstalled": "Recently installed",
@@ -25,10 +27,8 @@ Map<String, Map<String, String>> scanStrings = {
     "installedToday": "Installed today",
     "installedYesterday": "Installed yesterday",
     "installedDaysAgo": "Installed {days} days ago",
-    // --- Tutorial Step 1: Start ---
     "tutorialTitle": "Tap to Scan",
     "tutorialDesc": "Press this button to scan for apps on the device. (Note: This is not a virus scan.)",
-    // --- Tutorial Step 2: After Scan ---
     "tutorialViewAllTitle": "See All Apps",
     "tutorialViewAllDesc": "Tap here to view the full list of installed apps.",
     "tutorialSkip": "SKIP",
@@ -38,6 +38,7 @@ Map<String, Map<String, String>> scanStrings = {
     "scanSubtitle": "การสแกนเก็บรายชื่อแอปเท่านั้น – ไม่ตรวจสอบไฟล์หรือข้อมูลส่วนตัว",
     "scanButton": "สแกน",
     "scanning": "กำลังสแกน...",
+    "preparing": "กำลังเตรียมข้อมูล...",
     "checkingApps": "ตรวจสอบแอป",
     "success": "สแกนเสร็จสิ้น",
     "recentlyInstalled": "ติดตั้งล่าสุด",
@@ -46,11 +47,8 @@ Map<String, Map<String, String>> scanStrings = {
     "installedToday": "ติดตั้งวันนี้",
     "installedYesterday": "ติดตั้งเมื่อวาน",
     "installedDaysAgo": "ติดตั้ง {days} วันที่แล้ว",
-    // --- Tutorial Step 1: Start ---
     "tutorialTitle": "เริ่มสแกนตรงนี้",
-    "tutorialDesc": "กดปุ่มเพื่อสแกนหาแอปในเครื่อง "
-        "(ไม่ใช่สแกนไวรัส)",
-    // --- Tutorial Step 2: After Scan ---
+    "tutorialDesc": "กดปุ่มเพื่อสแกนหาแอปในเครื่อง (ไม่ใช่สแกนไวรัส)",
     "tutorialViewAllTitle": "ดูแอปทั้งหมด",
     "tutorialViewAllDesc": "กดตรงนี้เพื่อดูรายชื่อแอปทั้งหมดในเครื่อง",
     "tutorialSkip": "ข้าม",
@@ -69,6 +67,7 @@ class ScanPage extends StatefulWidget {
 class _ScanPageState extends State<ScanPage>
     with AutomaticKeepAliveClientMixin {
   bool isScanning = false;
+  bool isPreparing = false; // 🔥 เช็คสถานะเตรียมข้อมูล
   bool scanCompleted = false;
   bool hasScannedOnce = false;
   double progress = 0.0;
@@ -77,8 +76,8 @@ class _ScanPageState extends State<ScanPage>
   List<dynamic> installedApps = [];
 
   // 🔥 Keys สำหรับ Tutorial
-  final GlobalKey scanButtonKey = GlobalKey(); // ปุ่ม Scan
-  final GlobalKey viewAllButtonKey = GlobalKey(); // ปุ่ม View All
+  final GlobalKey scanButtonKey = GlobalKey();
+  final GlobalKey viewAllButtonKey = GlobalKey();
 
   @override
   bool get wantKeepAlive => true;
@@ -87,19 +86,15 @@ class _ScanPageState extends State<ScanPage>
   void initState() {
     super.initState();
     loadCache();
-    // 🔥 เช็คสอนครั้งแรก (ปุ่ม Scan)
     checkScanTutorial();
   }
 
   // ------------------ Tutorial Logic ------------------
-
-  // 🔥 ฟังก์ชันช่วยบันทึกว่าสอนแล้ว (แยกออกมาตรงนี้ แก้ตัวแดง)
   void markTutorialAsSeen(String key) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, true);
   }
 
-  // 1. สอนปุ่ม Scan (ทำงานตอนเข้าหน้าครั้งแรก)
   void checkScanTutorial() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool hasSeen = prefs.getBool('hasSeenScanTutorial') ?? false;
@@ -154,7 +149,6 @@ class _ScanPageState extends State<ScanPage>
       textSkip: text["tutorialSkip"]!,
       paddingFocus: 10,
       opacityShadow: 0.85,
-      // ✅ แก้ไข: เรียกฟังก์ชันแทนการเขียน async ในนี้
       onFinish: () => markTutorialAsSeen('hasSeenScanTutorial'),
       onSkip: () {
         markTutorialAsSeen('hasSeenScanTutorial');
@@ -163,7 +157,6 @@ class _ScanPageState extends State<ScanPage>
     ).show(context: context);
   }
 
-  // 2. สอนปุ่ม View All (ทำงานหลังจากสแกนเสร็จ)
   void checkViewAllTutorial() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool hasSeen = prefs.getBool('hasSeenViewAllTutorial') ?? false;
@@ -183,12 +176,12 @@ class _ScanPageState extends State<ScanPage>
       targets: [
         TargetFocus(
           identify: "ViewAllButton",
-          keyTarget: viewAllButtonKey, // ชี้ไปที่ปุ่ม View All
+          keyTarget: viewAllButtonKey,
           alignSkip: Alignment.topLeft,
           shape: ShapeLightFocus.RRect,
           contents: [
             TargetContent(
-              align: ContentAlign.top, // ข้อความอยู่ด้านบน
+              align: ContentAlign.top,
               builder: (context, controller) {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -218,7 +211,6 @@ class _ScanPageState extends State<ScanPage>
       textSkip: text["tutorialSkip"]!,
       paddingFocus: 5,
       opacityShadow: 0.85,
-      // ✅ แก้ไข: เรียกฟังก์ชันแทนการเขียน async ในนี้
       onFinish: () => markTutorialAsSeen('hasSeenViewAllTutorial'),
       onSkip: () {
         markTutorialAsSeen('hasSeenViewAllTutorial');
@@ -251,14 +243,31 @@ class _ScanPageState extends State<ScanPage>
   }
 
   Future<void> uploadToBackend(String deviceId, List<Application> apps) async {
-    final registerUrl = Uri.parse("http://10.0.2.2:5000/register_device");
-    final uploadUrl = Uri.parse("http://10.0.2.2:5000/upload_apps");
+    // 🔥 ใช้ URL จาก Config
+    final String baseUrl = Config.baseUrl;
+
+    final registerUrl = Uri.parse("$baseUrl/register_device");
+    final uploadUrl = Uri.parse("$baseUrl/upload_apps");
+
     try {
-      await http.post(
+      debugPrint("=== START UPLOAD ===");
+      debugPrint("DeviceID = $deviceId");
+      debugPrint("Apps count = ${apps.length}");
+
+      // ---------- REGISTER DEVICE ----------
+      final registerResp = await http.post(
         registerUrl,
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "1",
+        },
         body: jsonEncode({"device_id": deviceId}),
       );
+
+      debugPrint("REGISTER -> code=${registerResp.statusCode}");
+      debugPrint("REGISTER body -> ${registerResp.body}");
+
+      // ---------- UPLOAD APPS ----------
       final body = {
         "device_id": deviceId,
         "apps": apps.map((a) {
@@ -267,17 +276,26 @@ class _ScanPageState extends State<ScanPage>
             "package_name": a.packageName,
             "installed_time": a.installTimeMillis,
           };
-        }).toList()
+        }).toList(),
       };
-      await http.post(
+
+      final uploadResp = await http.post(
         uploadUrl,
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "1",
+        },
         body: jsonEncode(body),
       );
+
+      debugPrint("UPLOAD -> code=${uploadResp.statusCode}");
+      debugPrint("UPLOAD body -> ${uploadResp.body}");
     } catch (e) {
-      debugPrint("❌ Backend upload error: $e");
+      debugPrint("❌ ERROR SENDING DATA TO BACKEND");
+      debugPrint(e.toString());
     }
   }
+
 
   Future<void> loadCache() async {
     final prefs = await SharedPreferences.getInstance();
@@ -308,7 +326,22 @@ class _ScanPageState extends State<ScanPage>
     await prefs.setString("recent_apps", jsonEncode(data));
   }
 
+  // 🔥 แก้ไข logic สแกนให้ UI ไม่ค้าง
   void startScan() async {
+    // 1. เปลี่ยนหน้าจอเป็น Loading ทันที
+    setState(() {
+      isScanning = true;
+      isPreparing = true;
+      scanCompleted = false;
+      progress = 0.0;
+      checkedApps = 0;
+      totalApps = 0;
+    });
+
+    // 2. พักให้ UI วาดวงกลมแป๊บนึง
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 3. เริ่มดึงข้อมูลแอป
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
       includeSystemApps: false,
@@ -319,15 +352,19 @@ class _ScanPageState extends State<ScanPage>
         .where((app) => app.packageName != "com.example.cybercare_app")
         .toList();
 
+    if (!mounted) return;
     setState(() {
+      isPreparing = false;
       totalApps = apps.length;
-      isScanning = true;
-      scanCompleted = false;
-      progress = 0.0;
-      checkedApps = 0;
     });
 
+    // 4. เริ่มนับ % หลอกๆ
     Timer.periodic(const Duration(milliseconds: 120), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
       setState(() {
         progress += 1 / (totalApps == 0 ? 1 : totalApps);
         checkedApps = (progress * totalApps).clamp(0, totalApps).toInt();
@@ -337,26 +374,31 @@ class _ScanPageState extends State<ScanPage>
           timer.cancel();
 
           Future.delayed(const Duration(seconds: 1), () async {
-            await getInstalledApps();
+            if (!mounted) return;
+
+            setState(() {
+              installedApps = apps;
+            });
             await saveCache();
 
             final deviceId = await getOrCreateDeviceId();
             await uploadToBackend(deviceId, installedApps.cast<Application>());
 
-            setState(() {
-              isScanning = false;
-              scanCompleted = true;
-              hasScannedOnce = true;
-            });
-
-            // 🔥 สแกนเสร็จแล้ว -> เรียกสอนปุ่ม View All
-            checkViewAllTutorial();
+            if (mounted) {
+              setState(() {
+                isScanning = false;
+                scanCompleted = true;
+                hasScannedOnce = true;
+              });
+              checkViewAllTutorial();
+            }
           });
         }
       });
     });
   }
 
+  // ใช้เฉพาะตอน init (ไม่เรียกใน startScan แล้ว)
   Future<void> getInstalledApps() async {
     List<Application> apps = await DeviceApps.getInstalledApplications(
       includeAppIcons: true,
@@ -437,7 +479,7 @@ class _ScanPageState extends State<ScanPage>
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       TextButton(
-                        key: viewAllButtonKey, // 🔥 ฝัง Key ปุ่ม View All ตรงนี้
+                        key: viewAllButtonKey,
                         onPressed: () {
                           if (installedApps.isNotEmpty) {
                             Navigator.push(
@@ -523,7 +565,7 @@ class _ScanPageState extends State<ScanPage>
           width: 200,
           height: 200,
           child: CircularProgressIndicator(
-            value: progress,
+            value: isPreparing ? null : progress,
             strokeWidth: 10,
             color: Colors.blue,
             backgroundColor: Colors.blue.withOpacity(0.1),
@@ -533,7 +575,7 @@ class _ScanPageState extends State<ScanPage>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              "${(progress * 100).toInt()}%",
+              isPreparing ? "..." : "${(progress * 100).toInt()}%",
               style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -542,7 +584,9 @@ class _ScanPageState extends State<ScanPage>
             ),
             const SizedBox(height: 8),
             Text(
-              text["scanning"]!,
+              isPreparing
+                  ? (text["preparing"] ?? "Preparing...")
+                  : text["scanning"]!,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -550,7 +594,9 @@ class _ScanPageState extends State<ScanPage>
               ),
             ),
             Text(
-              "${text["checkingApps"]!}: $checkedApps/$totalApps",
+              isPreparing
+                  ? ""
+                  : "${text["checkingApps"]!}: $checkedApps/$totalApps",
               style: const TextStyle(
                 fontSize: 14,
                 color: Colors.black54,
@@ -586,7 +632,7 @@ class _ScanPageState extends State<ScanPage>
   );
 
   Widget _buildScanButton(Map<String, String> text) => GestureDetector(
-    key: scanButtonKey, // 🔥 Key ปุ่ม Scan
+    key: scanButtonKey,
     onTap: startScan,
     child: Container(
       width: 200,
@@ -624,6 +670,7 @@ class _ScanPageState extends State<ScanPage>
 class AllAppsPage extends StatelessWidget {
   final List<dynamic> apps;
   final String lang;
+
   const AllAppsPage({super.key, required this.apps, required this.lang});
 
   String installedText(int daysAgo, Map<String, String> text) {
@@ -658,8 +705,7 @@ class AllAppsPage extends StatelessWidget {
             }
           }
 
-          final installedDate =
-          DateTime.fromMillisecondsSinceEpoch(installTime);
+          final installedDate = DateTime.fromMillisecondsSinceEpoch(installTime);
           final daysAgo = DateTime.now().difference(installedDate).inDays;
 
           return ListTile(

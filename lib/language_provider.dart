@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'config.dart'; // 🔥 1. Import ไฟล์ Config (อยู่โฟลเดอร์เดียวกัน)
 
 class LanguageProvider extends ChangeNotifier {
   String _lang = "en";
@@ -11,59 +12,70 @@ class LanguageProvider extends ChangeNotifier {
     _loadLang();
   }
 
-  // ✅ โหลดค่าภาษาอย่างรวดเร็ว และ notify ทันทีที่ได้ค่า
+  // โหลดค่าภาษาที่เคยบันทึกไว้ (ครั้งแรกตอนเปิดแอป)
   Future<void> _loadLang() async {
-    final prefs = await SharedPreferences.getInstance();
-    // ถ้าเคยเลือกภาษาไว้แล้ว ให้ใช้ค่านั้น ถ้าไม่เคยให้เป็น 'en'
-    String? savedLang = prefs.getString("lang");
-
-    if (savedLang != null) {
-      _lang = savedLang;
-      // แจ้งเตือน UI ว่าค่าเปลี่ยนแล้วนะ (สำคัญมาก!)
-      notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString("lang");
+      if (saved != null) {
+        _lang = saved;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("LOAD LANGUAGE ERROR: $e");
     }
   }
 
-  // ✅ เปลี่ยนภาษา + บันทึก + ส่ง Backend
-  Future<void> setLang(String newLang) async {
-    // 1. อัปเดตค่าในตัวแปรทันทีเพื่อให้ UI เปลี่ยนไวที่สุด
+  // เปลี่ยนภาษาแบบไม่ค้าง UI (Optimistic UI)
+  void setLang(String newLang) {
+    // 1) อัปเดตหน้าจอทันที
     _lang = newLang;
     notifyListeners();
 
-    // 2. บันทึกลงเครื่อง
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("lang", newLang);
+    // 2) งานหนักทำหลังไมค์ (ไม่ await)
+    Future.microtask(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString("lang", newLang);
 
-    // 3. ส่งไป Backend (ทำเงียบๆ ไม่ต้องรอ)
-    final deviceId = prefs.getString("device_id");
-    if (deviceId != null) {
-      _syncToBackend(deviceId, newLang);
-    }
+        final deviceId = prefs.getString("device_id");
+        if (deviceId != null) {
+          _syncToBackend(deviceId, newLang);
+        }
+      } catch (e) {
+        debugPrint("SAVE LANGUAGE ERROR: $e");
+      }
+    });
   }
 
-  // แยกฟังก์ชัน sync ออกมาเพื่อให้โค้ดสะอาดและไม่บล็อก UI
-  Future<void> _syncToBackend(String deviceId, String langCode) async {
+  // ส่งค่าภาษาไป backend แบบเงียบ ๆ
+  Future<void> _syncToBackend(String deviceId, String lang) async {
     try {
-      final url = Uri.parse("http://10.0.2.2:5000/update_preferences");
-      // ส่งเฉพาะภาษา ส่วนอื่นๆ ให้ Backend ใช้ค่าเดิม (ถ้า Backend รองรับ)
-      // หรือถ้า Backend บังคับส่งครบ ต้องระวังตรงนี้ (แต่ตามโค้ด Backend ที่ให้ไปล่าสุด มันรองรับการ update บางค่าได้)
+      // 🔥 2. แก้ให้ใช้ URL จาก Config
+      final url = Uri.parse("${Config.baseUrl}/update_preferences");
+
       final body = jsonEncode({
         "device_id": deviceId,
-        "language": langCode,
-        // ส่งค่า default ไปกันเหนียว ถ้า backend ต้องการ
-        "mode": "3-times",
+        "language": lang,
+        "mode": "realtime",
+        "include_cyber_attack": false,
         "time1": null,
         "time2": null,
         "time3": null,
       });
 
-      await http.post(
+      final resp = await http.post(
         url,
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "1",
+        },
         body: body,
-      );
+      ).timeout(const Duration(seconds: 5));
+
+      debugPrint("LANG SYNC -> ${resp.statusCode} | ${resp.body}");
     } catch (e) {
-      print("❌ Failed to sync language with backend: $e");
+      debugPrint("LANG SYNC ERROR: $e");
     }
   }
 }

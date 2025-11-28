@@ -5,9 +5,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
-// 🔥 1. Import Tutorial Package
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../language_provider.dart';
+import '../config.dart'; // 🔥 1. Import Config
 
 // ===================== Localized Strings =====================
 Map<String, Map<String, String>> localizedStrings = {
@@ -18,7 +18,6 @@ Map<String, Map<String, String>> localizedStrings = {
     "alertsSubtitle": "Notification preferences",
     "timeSetting": "Notification Settings",
 
-    // 🔥 New Content Settings Strings
     "contentSection": "Alert Content",
     "includeAttack": "Include Cyber Attacks",
     "includeAttackSubtitleOn": "Receiving Vulnerabilities & Cyber Attack News",
@@ -36,12 +35,10 @@ Map<String, Map<String, String>> localizedStrings = {
     "setTime": "Set Time",
     "cancel": "Cancel",
     "save": "Save",
-    // --- Tutorial Settings Page ---
     "tutorialLangTitle": "Change Language",
     "tutorialLangDesc": "Tap here to switch between Thai and English.",
     "tutorialAlertTitle": "Notification Settings",
     "tutorialAlertDesc": "Tap here to configure when and what alerts you receive.",
-    // 🔥 --- Tutorial TimeSetting Page ---
     "tutorialAttackTitle": "Cyber Attack News",
     "tutorialAttackDesc": "Toggle ON to receive general cyber attack news in addition to app vulnerabilities.",
     "tutorialRealtimeTitle": "Real-time vs Scheduled",
@@ -57,7 +54,6 @@ Map<String, Map<String, String>> localizedStrings = {
     "alertsSubtitle": "การตั้งค่าการแจ้งเตือน",
     "timeSetting": "ตั้งค่าการแจ้งเตือน",
 
-    // 🔥 เพิ่มข้อความใหม่สำหรับ Content Settings
     "contentSection": "เนื้อหาการแจ้งเตือน",
     "includeAttack": "รวมข่าวการโจมตีไซเบอร์",
     "includeAttackSubtitleOn": "รับแจ้งเตือนทั้งช่องโหว่และข่าวการโจมตี",
@@ -75,12 +71,10 @@ Map<String, Map<String, String>> localizedStrings = {
     "setTime": "ตั้งเวลา",
     "cancel": "ยกเลิก",
     "save": "บันทึก",
-    // --- Tutorial Settings Page ---
     "tutorialLangTitle": "เปลี่ยนภาษา",
     "tutorialLangDesc": "กดตรงนี้เพื่อเปลี่ยนภาษาของแอปพลิเคชัน (ไทย/English)",
     "tutorialAlertTitle": "ตั้งค่าการแจ้งเตือน",
     "tutorialAlertDesc": "กดตรงนี้เพื่อเข้าไปกำหนดเวลาและประเภทการรับแจ้งเตือนความปลอดภัย",
-    // 🔥 --- Tutorial TimeSetting Page ---
     "tutorialAttackTitle": "ข่าวการโจมตีไซเบอร์",
     "tutorialAttackDesc": "เปิดสวิตช์นี้หากต้องการรับข่าวสารเกี่ยวกับภัยคุกคามไซเบอร์ทั่วไป เพิ่มเติมจากการแจ้งเตือนช่องโหว่ของแอป",
     "tutorialRealtimeTitle": "โหมดเรียลไทม์",
@@ -102,7 +96,11 @@ Future<String> getOrCreateDeviceId() async {
   return id;
 }
 
-// 🔥 Updated: Added includeCyberAttack parameter
+// 🔥 2. ฟังก์ชัน Helper URL ใช้ Config
+String getBaseUrl() {
+  return Config.baseUrl;
+}
+
 Future<void> updatePreferences({
   required String deviceId,
   required String language,
@@ -110,8 +108,8 @@ Future<void> updatePreferences({
   required bool includeCyberAttack,
   List<TimeOfDay>? times,
 }) async {
-  // หากใช้ Emulator Android ให้ใช้ 10.0.2.2 หากเครื่องจริงให้ใช้ IP เครื่องคอม
-  final url = Uri.parse("http://10.0.2.2:5000/update_preferences");
+  final baseUrl = getBaseUrl();
+  final url = Uri.parse("$baseUrl/update_preferences");
 
   final body = {
     "device_id": deviceId,
@@ -132,12 +130,15 @@ Future<void> updatePreferences({
   try {
     final res = await http.post(
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true", // 🔥 3. ใส่ Header
+      },
       body: jsonEncode(body),
     );
-    print("Update Preferences response: ${res.body}");
+    debugPrint("Update Preferences response: ${res.body}");
   } catch (e) {
-    print("Error updating preferences: $e");
+    debugPrint("Error updating preferences: $e");
   }
 }
 
@@ -324,7 +325,7 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 // ===================================================
-// 🔥 Time Setting Page (Updated with Tutorial for Content Switch)
+// 🔥 Time Setting Page
 // ===================================================
 class TimeSettingPage extends StatefulWidget {
   final String lang;
@@ -335,7 +336,6 @@ class TimeSettingPage extends StatefulWidget {
 }
 
 class _TimeSettingPageState extends State<TimeSettingPage> {
-  // Existing States
   bool _enabled = true;
   int _frequency = 3;
   List<TimeOfDay> _times = [
@@ -343,27 +343,102 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
     const TimeOfDay(hour: 12, minute: 30),
     const TimeOfDay(hour: 20, minute: 30),
   ];
-
-  // 🔥 New State for "Include Cyber Attacks"
   bool _includeCyberAttack = false;
 
-  // 🔥 Keys for Tutorial
-  final GlobalKey attackSwitchKey = GlobalKey(); // ✅ Key for new switch
+  // Keys for Tutorial
+  final GlobalKey attackSwitchKey = GlobalKey();
   final GlobalKey timeSwitchKey = GlobalKey();
   final GlobalKey frequencyKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    loadPreferences();
+    _loadLocalPreferences(); // 1. โหลดจากเครื่องก่อน
+    _fetchPreferencesFromServer(); // 2. โหลดจาก Server ทีหลัง
     checkTutorial();
   }
 
-  // --- Tutorial Logic ---
+  Future<void> _loadLocalPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _enabled = prefs.getBool('setting_enabled_3times') ?? true;
+        _includeCyberAttack = prefs.getBool('setting_include_attack') ?? false;
+        _frequency = prefs.getInt('setting_frequency') ?? 3;
+      });
+    }
+  }
+
+  Future<void> _fetchPreferencesFromServer() async {
+    final deviceId = await getOrCreateDeviceId();
+    final baseUrl = getBaseUrl();
+    final url = Uri.parse("$baseUrl/get_preferences?device_id=$deviceId");
+
+    try {
+      final res = await http.get(
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true", // 🔥 4. ใส่ Header
+        },
+      );
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final prefs = await SharedPreferences.getInstance();
+
+        if (mounted) {
+          setState(() {
+            _enabled = (data["mode"] == "3-times");
+            _includeCyberAttack = data["include_cyber_attack"] ?? false;
+
+            List<TimeOfDay> loadedTimes = [];
+            if (data["time1"] != null && data["time1"] != "null") loadedTimes.add(_parseTime(data["time1"]));
+            if (data["time2"] != null && data["time2"] != "null") loadedTimes.add(_parseTime(data["time2"]));
+            if (data["time3"] != null && data["time3"] != "null") loadedTimes.add(_parseTime(data["time3"]));
+
+            if (loadedTimes.isNotEmpty) {
+              _frequency = loadedTimes.length;
+              for (int i = 0; i < loadedTimes.length; i++) {
+                _times[i] = loadedTimes[i];
+              }
+            } else {
+              _frequency = 3;
+            }
+          });
+
+          await prefs.setBool('setting_enabled_3times', _enabled);
+          await prefs.setBool('setting_include_attack', _includeCyberAttack);
+          await prefs.setInt('setting_frequency', _frequency);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading preferences: $e");
+    }
+  }
+
+  Future<void> _saveConfig() async {
+    setState(() {});
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('setting_enabled_3times', _enabled);
+    await prefs.setBool('setting_include_attack', _includeCyberAttack);
+    await prefs.setInt('setting_frequency', _frequency);
+
+    final deviceId = await getOrCreateDeviceId();
+    List<TimeOfDay> activeTimes = _times.sublist(0, _frequency);
+    await updatePreferences(
+      deviceId: deviceId,
+      language: widget.lang,
+      enabled3Times: _enabled,
+      includeCyberAttack: _includeCyberAttack,
+      times: activeTimes,
+    );
+  }
+
   void checkTutorial() async {
     final prefs = await SharedPreferences.getInstance();
     bool hasSeen = prefs.getBool('hasSeenTimeSettingTutorial') ?? false;
-
     if (!hasSeen) {
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) showTutorial();
@@ -373,10 +448,8 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
 
   void showTutorial() {
     final text = localizedStrings[widget.lang]!;
-
     List<TargetFocus> targets = [];
 
-    // 🔥 1. สอนปุ่มเลือกข่าว Cyber Attack (เพิ่มใหม่)
     targets.add(
       TargetFocus(
         identify: "AttackSwitch",
@@ -404,7 +477,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
       ),
     );
 
-    // 2. สอนสวิตช์เปิด/ปิด (Real-time)
     targets.add(
       TargetFocus(
         identify: "TimeSwitch",
@@ -432,7 +504,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
       ),
     );
 
-    // 3. สอนเลือกความถี่ (ถ้าเปิดอยู่)
     if (_enabled) {
       targets.add(
         TargetFocus(
@@ -479,56 +550,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
   void markTutorialAsSeen() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenTimeSettingTutorial', true);
-  }
-  // --- End Tutorial Logic ---
-
-  Future<void> loadPreferences() async {
-    final deviceId = await getOrCreateDeviceId();
-    final url = Uri.parse("http://10.0.2.2:5000/get_preferences?device_id=$deviceId");
-
-    try {
-      final res = await http.get(url);
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        setState(() {
-          _enabled = (data["mode"] == "3-times");
-
-          if (data["include_cyber_attack"] != null) {
-            _includeCyberAttack = data["include_cyber_attack"];
-          } else {
-            _includeCyberAttack = false;
-          }
-
-          List<TimeOfDay> loadedTimes = [];
-          if (data["time1"] != null) loadedTimes.add(_parseTime(data["time1"]));
-          if (data["time2"] != null) loadedTimes.add(_parseTime(data["time2"]));
-          if (data["time3"] != null) loadedTimes.add(_parseTime(data["time3"]));
-
-          if (loadedTimes.isNotEmpty) {
-            _frequency = loadedTimes.length;
-            for (int i = 0; i < loadedTimes.length; i++) {
-              _times[i] = loadedTimes[i];
-            }
-          } else {
-            _frequency = 3;
-          }
-        });
-      }
-    } catch (e) {
-      print("Error loading preferences: $e");
-    }
-  }
-
-  Future<void> _saveConfig() async {
-    final deviceId = await getOrCreateDeviceId();
-    List<TimeOfDay> activeTimes = _times.sublist(0, _frequency);
-    await updatePreferences(
-      deviceId: deviceId,
-      language: widget.lang,
-      enabled3Times: _enabled,
-      includeCyberAttack: _includeCyberAttack,
-      times: activeTimes,
-    );
   }
 
   Future<void> _pickTimeCupertino(int index, Map<String, String> text) async {
@@ -581,7 +602,6 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
   @override
   Widget build(BuildContext context) {
     var text = localizedStrings[widget.lang]!;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(text["timeSetting"]!),
@@ -593,12 +613,10 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
         padding: const EdgeInsets.all(16.0),
         child: ListView(
           children: [
-
-            // 🔥 NEW SECTION: Content Preference
             Text(text["contentSection"]!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
             SwitchListTile(
-              key: attackSwitchKey, // ✅ ใส่ Key ตรงนี้เพื่อให้ Tutorial ชี้ถูก
+              key: attackSwitchKey,
               title: Text(text["includeAttack"]!, style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text(
                 _includeCyberAttack ? text["includeAttackSubtitleOn"]! : text["includeAttackSubtitleOff"]!,
@@ -608,13 +626,11 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
               activeColor: Colors.orange,
               onChanged: (val) async {
                 setState(() => _includeCyberAttack = val);
-                await _saveConfig();
+                await _saveConfig(); // เรียก Save ทันทีที่กด
               },
             ),
             const Divider(),
             const SizedBox(height: 10),
-
-            // --- Existing Time Settings ---
             SwitchListTile(
               key: timeSwitchKey,
               title: Text(text["timesDay"]!, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -627,14 +643,12 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
               activeTrackColor: Colors.blue[200],
               onChanged: (val) async {
                 setState(() => _enabled = val);
-                await _saveConfig();
+                await _saveConfig(); // เรียก Save ทันทีที่กด
               },
             ),
-
             if (_enabled) ...[
               const Divider(),
               const SizedBox(height: 10),
-
               Row(
                 key: frequencyKey,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -652,15 +666,13 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
                     onChanged: (val) async {
                       if (val != null) {
                         setState(() => _frequency = val);
-                        await _saveConfig();
+                        await _saveConfig(); // เรียก Save ทันทีที่กด
                       }
                     },
                   ),
                 ],
               ),
-
               const SizedBox(height: 15),
-
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
@@ -690,9 +702,7 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
                   );
                 }),
               ),
-
               const SizedBox(height: 30),
-
               Center(
                 child: TextButton.icon(
                   onPressed: () async {
@@ -711,9 +721,7 @@ class _TimeSettingPageState extends State<TimeSettingPage> {
                 ),
               ),
             ],
-
             const SizedBox(height: 16),
-
             Card(
               child: Container(
                 width: double.infinity,
